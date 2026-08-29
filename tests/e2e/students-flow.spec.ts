@@ -71,9 +71,9 @@ test('happy path：新建 → 列表 → 详情(年龄) → 编辑 → 详情反
   await expect(birthRow.locator('dd')).toContainText('2016-06-01');
   await expect(birthRow.locator('dd')).toContainText('年龄');
 
-  // 列表里出现
-  await page.locator('.nav-brand').click();
-  await gotoStudents();
+  // 详情页「返回列表」回到学员档案列表
+  await page.getByRole('button', { name: '返回列表' }).click();
+  await page.waitForFunction(() => location.hash === '#/list');
   await expect(page.locator('.student-row', { hasText: '陈小花' })).toHaveCount(1);
 
   // 编辑剩余课时
