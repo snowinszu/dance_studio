@@ -26,6 +26,9 @@ jobs:
       # Electron 与 Chromium 共用一套系统库，用 Playwright 的 install-deps 一次装齐
       - run: npx playwright install-deps chromium
 
+      # 单元测试用 Electron 的 Node 运行时跑（ELECTRON_RUN_AS_NODE），无需显示服务器
+      - run: npm run test:unit
+
       # Linux 上 Electron 需要一个显示服务器；xvfb-run 提供虚拟屏
       - run: xvfb-run --auto-servernum npm run test:e2e
 

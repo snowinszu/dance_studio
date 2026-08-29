@@ -26,14 +26,20 @@ try {
   await page.waitForLoadState('domcontentloaded');
   const title = await page.title();
   const cards = await page.locator('.app-card').count();
+  // 主进程在 app ready 时打开 SQLite 并迁移，成功后把状态写进 process.env；
+  // 原生模块（better-sqlite3）在打包产物里加载失败时这里会是 'error' 或 undefined
+  const dbStatus = await app.evaluate(() => process.env.STUDIO_DB_STATUS);
   if (title !== EXPECTED_TITLE) {
     console.error(`::error::窗口标题不符：期望「${EXPECTED_TITLE}」，实际「${title}」`);
     process.exitCode = 1;
   } else if (cards !== 5) {
     console.error(`::error::首页应用卡片数不符：期望 5，实际 ${cards}`);
     process.exitCode = 1;
+  } else if (dbStatus !== 'ready') {
+    console.error(`::error::数据库未就绪：STUDIO_DB_STATUS=${dbStatus ?? 'undefined'}（原生模块可能未随包重建）`);
+    process.exitCode = 1;
   } else {
-    console.log(`✓ 打包应用启动正常：标题「${title}」、${cards} 张应用卡`);
+    console.log(`✓ 打包应用启动正常：标题「${title}」、${cards} 张应用卡、数据库已就绪`);
   }
 } finally {
   await app.close();

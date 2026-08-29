@@ -10,17 +10,19 @@ directories:
   buildResources: build
 
 # 只打包运行时需要的文件；src/ tests/ ui_kits/ tasks/ scripts/ .github/ 等一律排除。
-# node_modules 由 electron-builder 按生产依赖自动处理（本项目无生产依赖）。
+# node_modules 由 electron-builder 按生产依赖自动处理（better-sqlite3 / exceljs）。
 files:
   - dist/**/*
   - "!dist/**/*.map"
   - index.html
   - placeholder.html
+  - students.html
+  - students.js
   - colors_and_type.css
   - package.json
 
-# 无原生模块，跳过重建以加速
-npmRebuild: false
+# better-sqlite3 是原生模块，打包前需按目标平台的 Electron ABI 重建
+npmRebuild: true
 
 win:
   target:

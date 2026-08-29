@@ -14,16 +14,24 @@
     "start": "node scripts/start.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
+    "pretest:unit": "tsc -p tsconfig.test.json",
+    "test:unit": "node scripts/test-unit.js",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "test": "npm run test:e2e",
+    "test": "npm run test:unit && npm run test:e2e",
     "make:icon": "node scripts/make-icon.mjs",
     "predist:win": "npm run build",
     "dist:win": "electron-builder --win nsis portable --x64 --publish never",
-    "postinstall": "node scripts/ensure-electron.js"
+    "postinstall": "node scripts/ensure-electron.js && electron-rebuild -f --only better-sqlite3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.13.0",
     "electron": "43.3.0",
     "electron-builder": "^26.15.3",

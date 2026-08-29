@@ -1,0 +1,13 @@
+{
+  // 单元测试专用编译配置：把 src/ 和 tests/unit/ 一起编到 dist-test/，
+  // 再由 scripts/run-unit-tests.mjs 用 node:test 跑 dist-test/tests/unit/*.test.js。
+  // 与主 tsconfig 分开，是因为要放宽 rootDir 以纳入 tests/ 目录。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist-test",
+    "noEmit": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "tests/unit/**/*.ts"]
+}

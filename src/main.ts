@@ -5,12 +5,37 @@
  * 拉幕布（加载页面）、以及在最后一位观众离场时关灯锁门（退出应用）。
  * 舞台上演的内容（首页 HTML/CSS/JS）由渲染进程负责，主进程不直接参与。
  */
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'node:path';
+import { getDb } from './db/connection';
+import { run as runMigrations, LATEST_VERSION } from './db/migrations';
+import { registerIpc } from './ipc/register';
 
 // 单窗口引用挂在模块作用域：若只用局部变量，窗口对象可能被垃圾回收，
 // 导致窗口在运行中突然白屏或关闭。
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * 打开数据库并把结构迁移到最新版。
+ *
+ * 失败时不让整个应用崩掉：弹一个错误框告诉用户数据库文件在哪、出了什么问题，
+ * 然后照常开窗口（后续的列表页会显示错误态），用户可自行处理文件后重启。
+ */
+function initDatabase(): void {
+  try {
+    const db = getDb();
+    runMigrations(db);
+    // 供打包冒烟脚本（scripts/smoke-packaged.mjs）经 app.evaluate 读取，
+    // 确认原生模块在打包产物里能正常加载、迁移能跑通
+    process.env.STUDIO_DB_STATUS = 'ready';
+    console.log(`[db] 就绪，结构版本 v${LATEST_VERSION}`);
+  } catch (err) {
+    process.env.STUDIO_DB_STATUS = 'error';
+    const detail = err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err);
+    console.error('[db] 初始化失败：', err);
+    dialog.showErrorBox('数据库打开失败', `无法打开或迁移学员数据库。\n\n${detail}`);
+  }
+}
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -43,6 +68,9 @@ function createMainWindow(): void {
 // app ready 后再建窗口：这是 Electron 能安全创建 BrowserWindow 的最早时机
 app.whenReady().then(
   () => {
+    // 建窗口前先把数据库准备好、把 IPC 服务台支起来，让首个渲染页面一加载就能读写数据
+    initDatabase();
+    registerIpc();
     createMainWindow();
 
     // macOS 习惯：Dock 图标被点击且当前无窗口时，重建一个
