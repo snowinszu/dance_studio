@@ -230,4 +230,9 @@ export function registerIpc(): void {
   handle(CH.inventoryListAllocations, (query?: AllocationListQuery) =>
     inventoryRepo.listAllocations(query ?? {}),
   );
+
+  handle(CH.inventoryDeleteAllocation, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少领用记录 id');
+    return inventoryRepo.deleteAllocation(Number(id));
+  });
 }

@@ -116,6 +116,7 @@ async function renderItems() {
         el('p', { class: 'page-sub', id: 'items-count', text: '载入中…' }),
       ),
       el('div', { class: 'detail-actions' },
+        el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/allocations'; } }, '领用流水'),
         el('button', {
           class: 'btn btn-primary',
           type: 'button',
@@ -589,23 +590,148 @@ async function submitAllocate(form) {
   }
 }
 
-/* ───────────────────────── 尚未接入的视图（占位） ─────────────────────────
-   #/allocations（#29）在后续 issue 里实现。 */
+/* ───────────────────────── 领用流水 ───────────────────────── */
 
-function renderStub(title) {
+const allocState = { dateFrom: '', dateTo: '', studentId: '', itemId: '', limit: 100 };
+
+function allocQuery() {
+  return {
+    dateFrom: allocState.dateFrom || undefined,
+    dateTo: allocState.dateTo || undefined,
+    studentId: allocState.studentId ? Number(allocState.studentId) : undefined,
+    itemId: allocState.itemId ? Number(allocState.itemId) : undefined,
+    limit: allocState.limit,
+  };
+}
+
+async function renderAllocations() {
+  view.replaceChildren(el('div', { text: '载入…' }));
+
+  // 从一份较大的流水里收集去重的「学员」「物件」作筛选下拉（含已软删物件）
+  let all = [];
+  try {
+    all = unwrap(await shell.inventory.allocations({ limit: 2000 })).rows;
+  } catch (e) {
+    view.replaceChildren(
+      el('div', { class: 'empty' }, el('strong', { text: '加载失败' }), el('span', { text: e.message })),
+    );
+    return;
+  }
+  const uniqBy = (arr, idKey, labelKey) => {
+    const m = new Map();
+    for (const r of arr) if (!m.has(r[idKey])) m.set(r[idKey], r[labelKey]);
+    return [...m.entries()].map(([id, label]) => ({ id, label }));
+  };
+  const studentOpts = uniqBy(all, 'studentId', 'studentName');
+  const itemOpts = uniqBy(all, 'itemId', 'itemName');
+
+  const dFrom = el('input', { type: 'date', class: 'toolbar-select', 'aria-label': '起始日期', value: allocState.dateFrom });
+  const dTo = el('input', { type: 'date', class: 'toolbar-select', 'aria-label': '截止日期', value: allocState.dateTo });
+  dFrom.addEventListener('change', () => { allocState.dateFrom = dFrom.value; allocState.limit = 100; void refreshAllocations(); });
+  dTo.addEventListener('change', () => { allocState.dateTo = dTo.value; allocState.limit = 100; void refreshAllocations(); });
+
+  const stuSel = el('select', { class: 'toolbar-select', 'aria-label': '按学员筛选' },
+    el('option', { value: '' }, '全部学员'),
+    ...studentOpts.map((o) => el('option', { value: String(o.id), selected: String(o.id) === allocState.studentId || null }, o.label)),
+  );
+  stuSel.addEventListener('change', () => { allocState.studentId = stuSel.value; allocState.limit = 100; void refreshAllocations(); });
+
+  const itmSel = el('select', { class: 'toolbar-select', 'aria-label': '按物件筛选' },
+    el('option', { value: '' }, '全部物件'),
+    ...itemOpts.map((o) => el('option', { value: String(o.id), selected: String(o.id) === allocState.itemId || null }, o.label)),
+  );
+  itmSel.addEventListener('change', () => { allocState.itemId = itmSel.value; allocState.limit = 100; void refreshAllocations(); });
+
   view.replaceChildren(
     el('div', { class: 'page-head' },
       el('div', {},
-        el('h1', { class: 'page-title', text: title }),
-        el('p', { class: 'page-sub', text: '此功能即将上线。' }),
+        el('h1', { class: 'page-title', text: '领用流水' }),
+        el('p', { class: 'page-sub', id: 'alloc-count', text: '载入中…' }),
       ),
-      el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回物件列表'),
+      el('div', { class: 'detail-actions' },
+        el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/allocate'; } }, '＋ 分配'),
+        el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
+      ),
     ),
-    el('div', { class: 'empty' },
-      el('strong', { text: '开发中' }),
-      el('span', { text: '返回「库存管理 → 物件列表」继续。' }),
+    el('div', { class: 'toolbar' },
+      el('span', { class: 'row-meta', text: '日期' }), dFrom, el('span', { class: 'row-meta', text: '至' }), dTo,
+      stuSel, itmSel,
+    ),
+    el('div', { class: 'list', id: 'alloc-body' }),
+  );
+
+  await refreshAllocations();
+}
+
+async function refreshAllocations() {
+  const body = document.getElementById('alloc-body');
+  const countEl = document.getElementById('alloc-count');
+  if (!body) return;
+
+  let result;
+  try {
+    result = unwrap(await shell.inventory.allocations(allocQuery()));
+  } catch (e) {
+    if (countEl) countEl.textContent = '';
+    body.replaceChildren(el('div', { class: 'empty' }, el('strong', { text: '加载失败' }), el('span', { text: e.message })));
+    return;
+  }
+
+  const { rows, total } = result;
+  const filtered = allocState.dateFrom || allocState.dateTo || allocState.studentId || allocState.itemId;
+  if (countEl) countEl.textContent = filtered ? `筛选到 ${total} 条` : `共 ${total} 条领用记录`;
+
+  if (rows.length === 0) {
+    body.replaceChildren(
+      el('div', { class: 'empty' },
+        el('strong', { text: filtered ? '没有符合筛选的记录' : '还没有领用记录' }),
+        el('span', { text: filtered ? '换个条件试试。' : '在物件详情点「分配」发放第一件物资。' }),
+      ),
+    );
+    return;
+  }
+
+  const rowEls = rows.map((a) =>
+    el('div', { class: 'student-row', style: 'cursor:default' },
+      el('div', { class: 'row-main' },
+        el('div', { class: 'row-name', text: `${a.studentName} · ${a.itemName}` }),
+        el('div', { class: 'row-meta', text: `${a.claimedAt}${a.studentPhone ? ' · ' + a.studentPhone : ''}${a.note ? ' · ' + a.note : ''}` }),
+      ),
+      el('span', { class: 'row-qty', text: `领 ${a.quantity}` }),
+      el('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        style: 'min-height:36px;padding:0 10px',
+        onclick: () => void confirmDeleteAllocation(a),
+      }, '删除'),
     ),
   );
+  if (total > rows.length) {
+    rowEls.push(
+      el('button', {
+        class: 'btn',
+        type: 'button',
+        style: 'align-self:center;margin-top:6px',
+        onclick: () => { allocState.limit += 100; void refreshAllocations(); },
+      }, `加载更多（还有 ${total - rows.length} 条）`),
+    );
+  }
+  body.replaceChildren(...rowEls);
+}
+
+async function confirmDeleteAllocation(a) {
+  const yes = window.confirm(
+    `确定删除这条领用记录吗？\n\n${a.studentName} 于 ${a.claimedAt} 领「${a.itemName}」${a.quantity} 件。\n删除将把 ${a.quantity} 件加回库存。`,
+  );
+  if (!yes) return;
+  try {
+    const { remaining } = unwrap(await shell.inventory.deleteAllocation(a.id));
+    toast(`已删除，「${a.itemName}」库存回补到 ${remaining}`);
+    await refreshAllocations();
+  } catch (e) {
+    toast(e.code === 'NOT_FOUND' ? '该记录已被删除' : `删除失败：${e.message}`);
+    await refreshAllocations();
+  }
 }
 
 /* ───────────────────────── 路由 ───────────────────────── */
@@ -620,7 +746,7 @@ async function route() {
   const { head, id, sub } = parseRoute();
   try {
     if (head === 'allocate') return await renderAllocateForm(id);
-    if (head === 'allocations') return renderStub('领用流水');
+    if (head === 'allocations') return await renderAllocations();
     if (head === 'items' && id === 'new') return await renderItemForm({ mode: 'new' });
     if (head === 'items' && id && sub === 'edit') {
       const item = unwrap(await shell.inventory.getItem(Number(id)));

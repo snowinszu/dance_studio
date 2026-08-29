@@ -333,3 +333,36 @@ export function listAllocations(query: AllocationListQuery = {}): AllocationList
 
   return { rows, total };
 }
+
+/**
+ * 删除一条领用记录，并把该记录的数量在同一事务里加回对应物件库存
+ * （物件即使已软删，quantity 列仍在，照常回补）。本版没有「归还」工作流，
+ * 删除 + 回补是唯一的纠错手段。
+ *
+ * @returns 被删记录 id + 其物件 id + 回补后的剩余库存
+ */
+export function deleteAllocation(id: number): { id: number; itemId: number; remaining: number } {
+  const db = getDb();
+  const now = nowIso();
+
+  const tx = db.transaction((): number => {
+    const row = db
+      .prepare(`SELECT item_id AS itemId, quantity FROM item_allocations WHERE id = ?`)
+      .get(id) as { itemId: number; quantity: number } | undefined;
+    if (!row) throw new AppError('NOT_FOUND', '领用记录不存在，可能已被删除');
+
+    db.prepare(`DELETE FROM item_allocations WHERE id = ?`).run(id);
+    db.prepare(
+      `UPDATE inventory_items SET quantity = quantity + @qty, updated_at = @now WHERE id = @itemId`,
+    ).run({ qty: row.quantity, itemId: row.itemId, now });
+    return row.itemId;
+  });
+
+  const itemId = tx();
+  const remaining = (
+    db.prepare(`SELECT quantity AS n FROM inventory_items WHERE id = ?`).get(itemId) as {
+      n: number;
+    }
+  ).n;
+  return { id, itemId, remaining };
+}

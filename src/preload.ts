@@ -42,6 +42,7 @@ const CH = {
   inventoryDeleteItem: 'inventory:deleteItem',
   inventoryAllocate: 'inventory:allocate',
   inventoryListAllocations: 'inventory:listAllocations',
+  inventoryDeleteAllocation: 'inventory:deleteAllocation',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -95,6 +96,7 @@ const api = {
     deleteItem: (id: number) => invoke(CH.inventoryDeleteItem, id),
     allocate: (input: unknown) => invoke(CH.inventoryAllocate, input),
     allocations: (query?: unknown) => invoke(CH.inventoryListAllocations, query),
+    deleteAllocation: (id: number) => invoke(CH.inventoryDeleteAllocation, id),
   },
 };
 

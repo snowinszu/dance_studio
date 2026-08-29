@@ -81,6 +81,9 @@ declare global {
         input: AllocationInput,
       ): Promise<IpcResult<{ id: number; remaining: number }>>;
       allocations(query?: AllocationListQuery): Promise<IpcResult<AllocationListResult>>;
+      deleteAllocation(
+        id: number,
+      ): Promise<IpcResult<{ id: number; itemId: number; remaining: number }>>;
     };
   }
 
