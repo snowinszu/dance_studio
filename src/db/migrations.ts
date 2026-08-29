@@ -116,10 +116,16 @@ const v2 = (db: Database): void => {
   `);
 };
 
+/** v3：课程与会员组新增「班级」字段。 */
+const v3 = (db: Database): void => {
+  db.exec(`ALTER TABLE students ADD COLUMN class_name TEXT;`);
+};
+
 /** 全部迁移，按 version 升序。新增结构变更时往末尾追加。 */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
   { version: 2, up: v2 },
+  { version: 3, up: v3 },
 ];
 
 /** 当前代码期望的最高版本号。 */
