@@ -116,10 +116,61 @@ const v2 = (db: Database): void => {
   `);
 };
 
+/**
+ * v3：库存管理模块的初始表结构。
+ *
+ * 两本「账」：
+ * - inventory_items：物件台账。quantity 是「当前在库数」的权威值，
+ *   列表 / 详情 / 分配下拉 / 低库存预警都直接读它，不靠汇总流水实时算。
+ * - item_allocations：领用流水，一行 = 某学员某天领走某物件几件。
+ *
+ * 两张表都不写 ON DELETE CASCADE：物件用软删除（deleted_at），学员本就是软删除，
+ * 删了也要能在流水 / 导出里查到历史。连接级 PRAGMA foreign_keys=ON（见 connection.ts）
+ * 下，这里的外键只保证「插入时 item_id / student_id 必须存在」。
+ */
+const v3 = (db: Database): void => {
+  db.exec(`
+    CREATE TABLE inventory_items (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name                 TEXT    NOT NULL,
+      category             TEXT,
+      unit                 TEXT    NOT NULL DEFAULT '件',
+      -- 当前在库数。不设 CHECK(quantity >= 0)：不为负由 allocate 的守卫 UPDATE 保证，
+      -- 加 CHECK 会让「删除领用记录回补库存」等场景更脆。
+      quantity             INTEGER NOT NULL DEFAULT 0,
+      -- 低于等于此值时，列表标「库存偏低」；0 表示「没货了才算偏低」
+      low_stock_threshold  INTEGER NOT NULL DEFAULT 0,
+      note                 TEXT,
+      created_at           TEXT    NOT NULL,
+      updated_at           TEXT    NOT NULL,
+      deleted_at           TEXT               -- 非空即已软删除
+    );
+
+    CREATE INDEX idx_items_name     ON inventory_items(name);
+    CREATE INDEX idx_items_category ON inventory_items(category);
+    CREATE INDEX idx_items_deleted  ON inventory_items(deleted_at);
+
+    CREATE TABLE item_allocations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id     INTEGER NOT NULL REFERENCES inventory_items(id),
+      student_id  INTEGER NOT NULL REFERENCES students(id),
+      quantity    INTEGER NOT NULL DEFAULT 1,
+      claimed_at  TEXT    NOT NULL,          -- 领取日期 'YYYY-MM-DD'，字典序即时间序
+      note        TEXT,
+      created_at  TEXT    NOT NULL
+    );
+
+    CREATE INDEX idx_alloc_item    ON item_allocations(item_id);
+    CREATE INDEX idx_alloc_student ON item_allocations(student_id);
+    CREATE INDEX idx_alloc_date    ON item_allocations(claimed_at);
+  `);
+};
+
 /** 全部迁移，按 version 升序。新增结构变更时往末尾追加。 */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
   { version: 2, up: v2 },
+  { version: 3, up: v3 },
 ];
 
 /** 当前代码期望的最高版本号。 */
