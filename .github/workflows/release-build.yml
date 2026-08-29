@@ -1,0 +1,125 @@
+name: Release build (reusable)
+
+# 可复用工作流：打 Windows x64 安装包 + 免安装版，并发布到 GitHub Release。
+# 由 release-windows.yml（手动发布）和 release-e2e.yml（发布链路自测）调用。
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "版本号（semver）。留空则用 package.json 的 version"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      version:
+        description: "实际发布的版本号"
+        value: ${{ jobs.build.outputs.version }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # postinstall（scripts/ensure-electron.js）会拉取 win32 版 Electron 二进制
+      - run: npm ci
+
+      # 解析版本：有输入则校验 semver 并写入 package.json；否则沿用 package.json
+      - name: Resolve version
+        id: ver
+        shell: bash
+        env:
+          # 经 env 传入，避免把输入直接插进 shell 脚本（脚本注入）
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          IN="$VERSION_INPUT"
+          if [ -n "$IN" ]; then
+            if ! printf '%s' "$IN" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'; then
+              echo "::error::version 输入 '$IN' 不是合法 semver（示例：1.2.0 或 1.2.0-rc.1）"
+              exit 1
+            fi
+            npm pkg set version="$IN"
+          fi
+          V="$(node -p "require('./package.json').version")"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "构建版本：$V"
+
+      # 冲突守卫：tag 或 Release v<version> 已存在则立刻失败，不进入构建、
+      # 更不会改动已存在的 Release
+      - name: Guard — v${{ steps.ver.outputs.version }} 尚未发布
+        shell: bash
+        run: |
+          tag="v${{ steps.ver.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::tag $tag 已存在，拒绝重复发布（不会改动已存在的 Release）"
+            exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::Release $tag 已存在，拒绝重复发布（不会改动已存在的 Release）"
+            exit 1
+          fi
+          echo "$tag 尚未发布，继续"
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+
+      - name: Package (electron-builder, Windows x64)
+        run: npx electron-builder --win nsis portable --x64 --publish never
+
+      - name: Checksums & job summary
+        shell: bash
+        run: |
+          cd release
+          # SHA256SUMS.txt 每行：<sha256><空格><空格><文件名>（GNU coreutils 格式）
+          sha256sum *.exe > SHA256SUMS.txt
+          {
+            echo "## Windows x64 构建产物 — v${{ steps.ver.outputs.version }}"
+            echo ""
+            echo "| 文件 | 大小 (bytes) | SHA-256 |"
+            echo "|---|---:|---|"
+            while read -r sha f; do
+              sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
+              echo "| \`$f\` | $sz | \`$sha\` |"
+            done < SHA256SUMS.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload installers (run artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers-v${{ steps.ver.outputs.version }}
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      # 打 tag v<version> 于触发所用 commit，并创建已发布（非 draft）的 Release
+      - name: Publish GitHub Release
+        shell: bash
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          tag="v$V"
+          base="https://github.com/${{ github.repository }}/releases/download/$tag"
+          sed -e "s|__V__|$V|g" -e "s#__BASE__#$base#g" \
+            .github/release-notes-template.md > release/NOTES.md
+          gh release create "$tag" \
+            "release/dance-studio-Setup-$V-x64.exe" \
+            "release/dance-studio-Portable-$V-x64.exe" \
+            "release/SHA256SUMS.txt" \
+            --target "${{ github.sha }}" \
+            --title "$tag" \
+            --notes-file release/NOTES.md
+          echo "已发布 $tag：$(gh release view "$tag" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"

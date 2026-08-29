@@ -1,0 +1,115 @@
+name: Release pipeline E2E
+
+# 手动触发。用一次性预发布版本 0.0.0-ci.<run_number> 跑完整发布链路：
+# 发布 → 重复版本被守卫拒绝 → 校验附件/校验和 → 打包应用冒烟 → 清理 tag 与 Release。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 1) 正常发布：创建 v0.0.0-ci.<run_number> 及其 Release
+  publish:
+    uses: ./.github/workflows/release-build.yml
+    permissions:
+      contents: write
+    with:
+      version: 0.0.0-ci.${{ github.run_number }}
+
+  # 2) 失败路径：对刚发布的同一版本，跑 release-build.yml 的守卫判据，
+  #    断言它以非零退出（reusable 调用作业不支持 continue-on-error，
+  #    故此处直接复跑守卫命令而非整个工作流）。
+  reject-duplicate:
+    needs: publish
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 重复版本必须被守卫拒绝
+        shell: bash
+        run: |
+          tag="v0.0.0-ci.${{ github.run_number }}"
+          set +e
+          (
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::tag $tag 已存在，拒绝重复发布（不会改动已存在的 Release）"; exit 1
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "::error::Release $tag 已存在，拒绝重复发布（不会改动已存在的 Release）"; exit 1
+            fi
+          )
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::守卫未拒绝已存在的 $tag —— 失败路径未复现"
+            exit 1
+          fi
+          echo "✓ 守卫按预期以非零退出（rc=$rc）拒绝了重复的 $tag"
+
+  verify:
+    needs: [publish, reject-duplicate]
+    if: always()
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CI_TAG: v0.0.0-ci.${{ github.run_number }}
+    steps:
+      - name: 断言前置作业结果
+        shell: bash
+        run: |
+          echo "publish=${{ needs.publish.result }}  reject-duplicate=${{ needs.reject-duplicate.result }}"
+          [ "${{ needs.publish.result }}" = "success" ] || { echo "::error::发布作业未成功"; exit 1; }
+          [ "${{ needs.reject-duplicate.result }}" = "success" ] || { echo "::error::重复版本守卫断言未通过"; exit 1; }
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: 下载 Release 附件
+        shell: bash
+        run: |
+          mkdir dl
+          gh release download "$CI_TAG" --dir dl --pattern '*'
+          ls -la dl
+
+      - name: 校验附件齐全 + 校验和一致（也确认被拒后 Release 未受影响）
+        shell: bash
+        run: node scripts/verify-release.mjs "$CI_TAG" dl
+
+      - name: 冒烟 — 静默安装 Setup 并用 Playwright 启动已安装应用
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dl\dance-studio-Setup-*.exe | Select-Object -First 1
+          Write-Host "silent install: $($setup.Name)"
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          # 不硬编码安装路径（productName 含 Unicode，可能被清洗）：在 Programs 下找主 exe
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -notlike 'Uninstall*' } | Select-Object -First 1
+          if (-not $exe) { Write-Error '静默安装后未找到已安装的可执行文件'; exit 1 }
+          Write-Host "installed: $($exe.FullName)"
+          node scripts/smoke-packaged.mjs $exe.FullName
+
+      - name: 冒烟 — portable .exe 能拉起应用进程
+        shell: pwsh
+        run: |
+          $p = Get-ChildItem dl\dance-studio-Portable-*.exe | Select-Object -First 1
+          Write-Host "run portable: $($p.Name)"
+          $proc = Start-Process -FilePath $p.FullName -PassThru
+          Start-Sleep -Seconds 25
+          $app = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '乐舞' }
+          if (-not $app) { Write-Error 'portable .exe 未拉起应用进程（未见含「乐舞」的进程）'; exit 1 }
+          Write-Host "portable app running: $($app.ProcessName) PID $($app.Id -join ',')"
+          $app | Stop-Process -Force -ErrorAction SilentlyContinue
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+      - name: 清理 — 删除一次性 tag 与 Release
+        if: always()
+        shell: bash
+        run: gh release delete "$CI_TAG" --yes --cleanup-tag || true
