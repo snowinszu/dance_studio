@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    // Electron 主进程运行在 Node 环境，用 CommonJS 输出最稳妥
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "outDir": "dist",
+    "rootDir": "src",
+
+    // 全局规范要求：strict mode 全开
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"]
+}

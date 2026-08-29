@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>晓·乐舞艺术空间 · 管理中心</title>
+  <!-- 设计令牌 stylesheet — Createthisprojecta design system tokens -->
+  <link rel="stylesheet" href="colors_and_type.css">
+  <style>
+    /* ─── 额外组件样式（令牌已由 colors_and_type.css 定义）
+       来源：dance-studio-home-v4.html                              */
+    :root {
+      --bg:      oklch(99.5% 0.003 15);
+      --surface: oklch(100% 0 0);
+      --fg:      oklch(14% 0.010 0);
+      --muted:   oklch(55% 0.008 0);
+      --border:  oklch(93% 0.004 0);
+      --accent:  oklch(57% 0.235 17);
+      --accent-soft: color-mix(in oklch, var(--accent) 10%, transparent);
+      --accent-mid:  color-mix(in oklch, var(--accent) 16%, transparent);
+      --fg-soft:     color-mix(in oklch, var(--fg) 5%, transparent);
+
+      --cc-1: oklch(68% 0.165 25);    /* 活力珊瑚 · 考勤 */
+      --cc-2: oklch(65% 0.130 152);   /* 鼠尾草绿 · 库存 */
+      --cc-3: oklch(63% 0.155 234);   /* 晴空蓝   · 课程 */
+      --cc-4: oklch(62% 0.135 293);   /* 薰衣草紫 · 学员 */
+      --cc-5: oklch(73% 0.135 70);    /* 琥珀金   · 收支 */
+      --cc-6: oklch(67% 0.145 356);   /* 玫瑰红   · 通知 */
+      --cc-7: oklch(66% 0.130 192);   /* 海洋青   · 教室 */
+      --cc-8: oklch(59% 0.145 308);   /* 暗梅紫   · 报表 */
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-mono:    ui-monospace, 'SF Mono', Menlo, monospace;
+
+      --radius:      12px;
+      --radius-lg:   18px;
+      --radius-xl:   24px;
+      --radius-pill: 999px;
+      --radius-icon: 14px;
+      --radius-mark: 8px;
+
+      --shadow-card:       0 1px 4px  color-mix(in oklch, var(--fg) 5%, transparent),
+                           0 4px 18px color-mix(in oklch, var(--fg) 5%, transparent);
+      --shadow-card-hover: 0 3px 10px color-mix(in oklch, var(--fg) 8%, transparent),
+                           0 10px 36px color-mix(in oklch, var(--fg) 8%, transparent);
+      --shadow-date:       0 2px 10px color-mix(in oklch, var(--fg) 5%, transparent);
+    }
+
+    /* ─── 重置 ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100vh; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ─── 顶部导航 ──────────────────────────────────────────────────── */
+    .topnav {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      backdrop-filter: blur(20px) saturate(1.6);
+      -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      border-bottom: 1px solid var(--border);
+    }
+    .topnav-inner {
+      max-width: 1120px; margin-inline: auto;
+      padding: 0 40px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 9px; }
+    .xhs-mark {
+      width: 28px; height: 28px;
+      background: var(--accent); border-radius: var(--radius-mark);
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    .xhs-mark svg { width: 16px; height: 16px; color: var(--surface); }
+    .nav-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+    .topnav-time { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--accent);
+      display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; color: var(--surface);
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .avatar:hover { opacity: 0.85; }
+    .avatar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ─── 主内容 ─────────────────────────────────────────────────────── */
+    main {
+      flex: 1;
+      max-width: 1120px; width: 100%;
+      margin-inline: auto;
+      padding: 40px 40px 72px;
+    }
+
+    /* ─── 问候区 ─────────────────────────────────────────────────────── */
+    .greeting-section {
+      display: grid; grid-template-columns: 1fr auto;
+      align-items: end; gap: 24px;
+      margin-bottom: 44px; padding-bottom: 36px;
+      border-bottom: 1px solid var(--border);
+    }
+    .greeting-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px 4px 8px;
+      background: var(--accent-mid); border-radius: var(--radius-pill);
+      margin-bottom: 16px;
+    }
+    .badge-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent); flex-shrink: 0;
+    }
+    .badge-text { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.04em; }
+    .greeting-title {
+      font-family: var(--font-display);
+      font-size: clamp(32px, 4vw, 48px);
+      font-weight: 800; letter-spacing: -0.03em; line-height: 1.08;
+      color: var(--fg); margin: 0 0 14px;
+    }
+    .greeting-title .red { color: var(--accent); }
+    .greeting-line { font-size: 15px; color: var(--muted); margin: 0; font-weight: 400; }
+    .date-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 18px 22px;
+      text-align: center; min-width: 120px;
+      box-shadow: var(--shadow-date);
+    }
+    .date-weekday {
+      font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 4px; margin-top: 0;
+    }
+    .date-day {
+      font-family: var(--font-display); font-size: 42px;
+      font-weight: 800; letter-spacing: -0.04em; line-height: 1;
+      color: var(--fg); margin: 0;
+    }
+    .date-month { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+
+    /* ─── 快速统计条 ─────────────────────────────────────────────────── */
+    .stats-bar {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 14px;
+      margin-bottom: 40px;
+    }
+    .stat-chip {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 18px;
+    }
+    .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .stat-value {
+      font-family: var(--font-display); font-size: 26px;
+      font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+      color: var(--fg); margin-bottom: 4px;
+    }
+    .stat-sub { font-size: 11px; color: var(--muted); }
+    .stat-value .unit { font-size: 14px; font-weight: 600; }
+    .stat-accent { color: var(--accent); }
+
+    /* ─── 应用网格 ───────────────────────────────────────────────────── */
+    .apps-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .apps-title {
+      font-family: var(--font-display); font-size: 18px; font-weight: 700;
+      letter-spacing: -0.015em; color: var(--fg); margin: 0;
+    }
+    .apps-count { font-size: 13px; color: var(--muted); }
+    .apps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+    /* ─── 应用卡片 ───────────────────────────────────────────────────── */
+    .app-card {
+      background: var(--surface); border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+      cursor: pointer;
+      transition: box-shadow 0.22s ease, transform 0.18s ease;
+      display: flex; flex-direction: column;
+    }
+    .app-card:hover {
+      box-shadow: var(--shadow-card-hover);
+      transform: translateY(-4px);
+    }
+    .app-card:active { transform: translateY(-1px); }
+    .app-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .card-top {
+      height: 96px;
+      background: linear-gradient(145deg, color-mix(in oklch, var(--cc) 75%, var(--surface)), var(--cc));
+      display: grid; place-items: center; position: relative;
+    }
+    .card-top::after {
+      content: ''; position: absolute; top: 10px; right: 12px;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: color-mix(in oklch, var(--surface) 15%, transparent);
+      pointer-events: none;
+    }
+    .card-icon {
+      width: 50px; height: 50px; border-radius: var(--radius-icon);
+      background: color-mix(in oklch, var(--surface) 28%, transparent);
+      display: grid; place-items: center;
+      position: relative; z-index: 1;
+    }
+    .card-icon svg { width: 24px; height: 24px; color: var(--surface); }
+    .card-body { padding: 14px 16px 16px; flex: 1; }
+    .app-name {
+      font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+      color: var(--fg); margin: 0 0 5px; line-height: 1.3;
+    }
+    .app-desc { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.5; }
+
+    /* ─── 页脚 ──────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 16px 40px; text-align: center;
+      font-size: 11.5px; color: var(--muted); letter-spacing: 0.01em;
+    }
+    footer .sep {
+      color: color-mix(in oklch, var(--accent) 45%, var(--muted));
+      margin-inline: 4px;
+    }
+
+    /* ─── 响应式 ─────────────────────────────────────────────────────── */
+    @media (max-width: 920px) {
+      .topnav-inner { padding-inline: 20px; }
+      main { padding-inline: 20px; }
+      .greeting-section { grid-template-columns: 1fr; align-items: start; }
+      .date-card { display: none; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .apps-grid { grid-template-columns: repeat(2, 1fr); }
+      footer { padding-inline: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<main>
+
+  <!-- 问候区 -->
+  <section class="greeting-section" data-od-id="greeting">
+    <div>
+      <div class="greeting-badge">
+        <span class="badge-dot" aria-hidden="true"></span>
+        <span class="badge-text">综合办公管理平台</span>
+      </div>
+      <h1 class="greeting-title">晓·<span class="red">乐舞</span><br>艺术空间</h1>
+      <p class="greeting-line" id="greeting-msg">欢迎回来，轻松管理，今天也要加油！</p>
+    </div>
+    <div class="date-card" aria-label="今日日期" data-od-id="date-card">
+      <p class="date-weekday" id="weekday"></p>
+      <p class="date-day" id="day"></p>
+      <p class="date-month" id="month"></p>
+    </div>
+  </section>
+
+  <!-- 快速统计 -->
+  <section class="stats-bar" data-od-id="stats-bar" aria-label="今日概况">
+    <div class="stat-chip" data-od-id="stat-students">
+      <div class="stat-label">在籍学员</div>
+      <div class="stat-value">248 <span class="unit stat-accent">人</span></div>
+      <div class="stat-sub">较上月 +12 人</div>
+    </div>
+    <div class="stat-chip" data-od-id="stat-attendance">
+      <div class="stat-label">今日出勤</div>
+      <div class="stat-value">36 <span class="unit stat-accent">人</span></div>
+      <div class="stat-sub">出勤率 92%</div>
+    </div>
+    <div class="stat-chip" data-od-id="stat-classes">
+      <div class="stat-label">今日课程</div>
+      <div class="stat-value">8 <span class="unit stat-accent">节</span></div>
+      <div class="stat-sub">3 间教室使用中</div>
+    </div>
+    <div class="stat-chip" data-od-id="stat-revenue">
+      <div class="stat-label">本月收入</div>
+      <div class="stat-value">¥<span>5.2</span><span class="unit stat-accent">万</span></div>
+      <div class="stat-sub">较上月 +8.3%</div>
+    </div>
+  </section>
+
+  <!-- 应用入口网格 -->
+  <section data-od-id="apps-grid">
+    <div class="apps-header">
+      <h2 class="apps-title">管理工具</h2>
+      <span class="apps-count">8 个应用</span>
+    </div>
+    <div class="apps-grid">
+
+      <a class="app-card" href="#" data-od-id="app-card-attendance" tabindex="0" style="--cc: var(--cc-1)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="12 7 12 12 15.5 14"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">考勤管理</h3>
+          <p class="app-desc">员工打卡与出勤统计</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-inventory" tabindex="0" style="--cc: var(--cc-2)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">库存管理</h3>
+          <p class="app-desc">舞蹈用品与物资库存</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-schedule" tabindex="0" style="--cc: var(--cc-3)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+              <circle cx="8" cy="15" r="1" fill="currentColor"></circle>
+              <circle cx="12" cy="15" r="1" fill="currentColor"></circle>
+              <circle cx="16" cy="15" r="1" fill="currentColor"></circle>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">课程安排</h3>
+          <p class="app-desc">课表制定与班级排课</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-students" tabindex="0" style="--cc: var(--cc-4)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">学员档案</h3>
+          <p class="app-desc">学员资料与成长记录</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-finance" tabindex="0" style="--cc: var(--cc-5)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"></line>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">收支记账</h3>
+          <p class="app-desc">学费收入与支出账目</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-notice" tabindex="0" style="--cc: var(--cc-6)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">通知公告</h3>
+          <p class="app-desc">内部消息与活动通知</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-booking" tabindex="0" style="--cc: var(--cc-7)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">教室预约</h3>
+          <p class="app-desc">教室场地使用管理</p>
+        </div>
+      </a>
+
+      <a class="app-card" href="#" data-od-id="app-card-reports" tabindex="0" style="--cc: var(--cc-8)">
+        <div class="card-top">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+              <line x1="2" y1="20" x2="22" y2="20"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="card-body">
+          <h3 class="app-name">数据报表</h3>
+          <p class="app-desc">经营数据与业绩分析</p>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+</main>
+
+<footer data-od-id="footer">
+  晓·乐舞艺术空间
+  <span class="sep">·</span>
+  综合管理平台
+  <span class="sep">·</span>
+  版权所有
+</footer>
+
+<script>
+  var greetings = {
+    morning:   '早上好！今天也是充满活力的一天',
+    afternoon: '下午好！记得休息一下哦',
+    evening:   '晚上好！今天辛苦了'
+  };
+  var weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
+  var months   = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  function updateAll() {
+    var now  = new Date();
+    var hour = now.getHours();
+
+    /* 时钟 */
+    var d = now.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric' });
+    var t = now.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    var clockEl = document.getElementById('clock');
+    if (clockEl) clockEl.textContent = d + '\u2002' + t;
+
+    /* 日期卡片 */
+    var dayEl   = document.getElementById('day');
+    var weekEl  = document.getElementById('weekday');
+    var monthEl = document.getElementById('month');
+    if (dayEl)   dayEl.textContent   = now.getDate();
+    if (weekEl)  weekEl.textContent  = weekdays[now.getDay()];
+    if (monthEl) monthEl.textContent = now.getFullYear() + '年 ' + months[now.getMonth()];
+
+    /* 问候语 */
+    var msgEl = document.getElementById('greeting-msg');
+    if (msgEl) {
+      if (hour < 12)      msgEl.textContent = greetings.morning;
+      else if (hour < 18) msgEl.textContent = greetings.afternoon;
+      else                msgEl.textContent = greetings.evening;
+    }
+  }
+
+  updateAll();
+  var msToNext = (60 - new Date().getSeconds()) * 1000;
+  setTimeout(function() {
+    updateAll();
+    setInterval(updateAll, 60000);
+  }, msToNext);
+</script>
+
+</body>
+</html>
