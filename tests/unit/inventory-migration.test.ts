@@ -22,7 +22,7 @@ function names(db: Database.Database, type: 'table' | 'index'): Set<string> {
   return new Set(rows.map((r) => r.name));
 }
 
-test('空库跑迁移 → v3 的两张表和 6 个索引都建出来，user_version 到最新', () => {
+test('空库跑迁移 → 库存的两张表和 6 个索引都建出来，user_version 到最新', () => {
   const db = freshDb();
   try {
     run(db);
@@ -45,7 +45,30 @@ test('空库跑迁移 → v3 的两张表和 6 个索引都建出来，user_vers
     }
 
     assert.equal(db.pragma('user_version', { simple: true }), LATEST_VERSION);
-    assert.ok(LATEST_VERSION >= 3, 'v3 应已纳入 MIGRATIONS');
+    assert.ok(LATEST_VERSION >= 4, '库存迁移（v4）应已纳入 MIGRATIONS');
+  } finally {
+    db.close();
+  }
+});
+
+test('库已在 v3（跑过并行的班级字段分支，无库存表）→ 再 run() 会补建库存表', () => {
+  const db = freshDb();
+  try {
+    // 用「库存迁移之前」的迁移把库推到 v2
+    const preInventory = MIGRATIONS.filter((m) => m.version < 4);
+    run(db, preInventory);
+    assert.equal(db.pragma('user_version', { simple: true }), 2);
+
+    // 模拟 feat/class-name-field 分支的 v3：加一列 + 把版本号顶到 3
+    db.exec('ALTER TABLE students ADD COLUMN class_name TEXT');
+    db.pragma('user_version = 3');
+    assert.ok(!names(db, 'table').has('inventory_items'), '此刻还没有库存表');
+
+    // 跑完整 MIGRATIONS：v4 > 3，应补建库存表
+    run(db);
+    assert.ok(names(db, 'table').has('inventory_items'));
+    assert.ok(names(db, 'table').has('item_allocations'));
+    assert.equal(db.pragma('user_version', { simple: true }), LATEST_VERSION);
   } finally {
     db.close();
   }

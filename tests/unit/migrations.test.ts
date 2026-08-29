@@ -97,10 +97,27 @@ test('某一版 up 中途抛错 → 该版整体回滚，user_version 不前进'
   }
 });
 
-test('MIGRATIONS 的 version 从 1 起、连续且升序', () => {
+test('MIGRATIONS 的 version 从 1 起、严格递增且唯一（允许有空档）', () => {
   const versions = MIGRATIONS.map((m) => m.version);
-  assert.deepEqual(
-    versions,
-    versions.map((_, i) => i + 1),
-  );
+  assert.equal(versions[0], 1, '第一版应为 v1');
+  for (let i = 1; i < versions.length; i += 1) {
+    assert.ok(versions[i]! > versions[i - 1]!, `v${versions[i]} 应大于 v${versions[i - 1]}`);
+  }
+  assert.equal(new Set(versions).size, versions.length, '版本号不能重复');
+});
+
+test('run() 对版本号重复的迁移列表直接抛错（不静默跳过）', () => {
+  const db = freshDb();
+  try {
+    assert.throws(
+      () =>
+        run(db, [
+          { version: 1, up: (d) => d.exec('CREATE TABLE a (id INTEGER)') },
+          { version: 1, up: (d) => d.exec('CREATE TABLE b (id INTEGER)') },
+        ]),
+      /版本号重复/,
+    );
+  } finally {
+    db.close();
+  }
 });
