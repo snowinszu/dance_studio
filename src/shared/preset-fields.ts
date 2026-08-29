@@ -56,14 +56,16 @@ export const PRESET_FIELDS: readonly PresetFieldDef[] = [
     options: ['父', '母', '祖辈', '其他监护人', '本人'],
   },
   {
+    // 用 text 而非 phone：主/备用电话可能是家用座机（如 010-88886666），不做手机号格式校验。
+    // 紧急联系电话仍是 phone 类型、仍校验手机号。
     key: 'phone_primary',
     label: '主联系电话',
-    type: 'phone',
+    type: 'text',
     group: 'contact',
     order: 3,
     required: true,
   },
-  { key: 'phone_secondary', label: '备用电话', type: 'phone', group: 'contact', order: 4 },
+  { key: 'phone_secondary', label: '备用电话', type: 'text', group: 'contact', order: 4 },
   { key: 'wechat', label: '微信号', type: 'text', group: 'contact', order: 5 },
   { key: 'address', label: '家庭住址', type: 'text', group: 'contact', order: 6 },
   {
@@ -95,7 +97,14 @@ export const PRESET_FIELDS: readonly PresetFieldDef[] = [
   { key: 'main_teacher', label: '主教老师', type: 'text', group: 'course', order: 4 },
   { key: 'class_schedule', label: '固定上课时段', type: 'text', group: 'course', order: 5 },
   { key: 'card_type', label: '卡种 / 课时包', type: 'text', group: 'course', order: 6 },
-  { key: 'remaining_lessons', label: '剩余课时', type: 'number', group: 'course', order: 7 },
+  {
+    key: 'remaining_lessons',
+    label: '剩余课时',
+    type: 'number',
+    group: 'course',
+    order: 7,
+    required: true,
+  },
   { key: 'card_expire_date', label: '有效期至', type: 'date', group: 'course', order: 8 },
   {
     key: 'status',

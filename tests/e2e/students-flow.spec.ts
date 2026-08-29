@@ -60,6 +60,7 @@ test('happy path：新建 → 列表 → 详情(年龄) → 编辑 → 详情反
   await page.fill('#f_name', '陈小花');
   await page.fill('#f_phone_primary', '13800138000');
   await page.fill('#f_birth_date', '2016-06-01');
+  await page.fill('#f_remaining_lessons', '10'); // 剩余课时现为必填
   await page.locator('.field[data-key="dance_types"] input[value="中国舞"]').check();
   await page.locator('.field[data-key="dance_types"] input[value="芭蕾"]').check();
   await page.getByRole('button', { name: '保存' }).click();
@@ -110,6 +111,7 @@ test('自定义字段：新增 → 录入 → 归档后表单/详情消失 → �
   await expect(campusWrap).toHaveCount(1);
   await page.fill('#f_name', '林一');
   await page.fill('#f_phone_primary', '13900139000');
+  await page.fill('#f_remaining_lessons', '8'); // 剩余课时现为必填
   await campusWrap.locator('select').selectOption('西城');
   await page.getByRole('button', { name: '保存' }).click();
   await page.waitForFunction(() => /^#\/s\/\d+$/.test(location.hash));
@@ -151,17 +153,24 @@ test('自定义字段：新增 → 录入 → 归档后表单/详情消失 → �
   expect(pageErrors).toEqual([]);
 });
 
-test('校验失败路径：空姓名 + 非法手机号 → 字段级报错且未写库', async () => {
+test('校验失败路径：必填项留空 → 字段级报错且未写库', async () => {
   await gotoStudents();
   await page.getByRole('button', { name: /新建学员/ }).click();
   await page.waitForFunction(() => location.hash === '#/new');
 
-  await page.fill('#f_phone_primary', '123');
+  // 什么都不填直接保存：姓名 / 主联系电话 / 剩余课时 都应报「此项为必填」
   await page.getByRole('button', { name: '保存' }).click();
 
   await expect(page.locator('.field[data-key="name"].has-error')).toHaveCount(1);
   await expect(page.locator('.field[data-key="phone_primary"].has-error')).toHaveCount(1);
-  await expect(page.locator('.field[data-key="phone_primary"] .field-error')).toContainText('手机号');
+  await expect(page.locator('.field[data-key="remaining_lessons"].has-error')).toHaveCount(1);
+  await expect(page.locator('.field[data-key="phone_primary"] .field-error')).toContainText('必填');
+
+  // 主联系电话填座机格式不再报错（只剩姓名 / 剩余课时的必填错）
+  await page.fill('#f_phone_primary', '010-88886666');
+  await page.getByRole('button', { name: '保存' }).click();
+  await expect(page.locator('.field[data-key="phone_primary"].has-error')).toHaveCount(0);
+  await expect(page.locator('.field[data-key="remaining_lessons"].has-error')).toHaveCount(1);
 
   // 未写库
   const total = await page.evaluate(async () => {
@@ -179,8 +188,8 @@ test('筛选：状态 + 标签组合，无结果显示空态文案', async () =>
   await page.evaluate(async () => {
     const a = await window.studioShell.tags.create({ name: 'A' });
     const b = await window.studioShell.tags.create({ name: 'B' });
-    const s1 = await window.studioShell.students.create({ name: '甲', phonePrimary: '13800000001', status: '在读', customFields: {} });
-    const s2 = await window.studioShell.students.create({ name: '乙', phonePrimary: '13800000002', status: '请假', customFields: {} });
+    const s1 = await window.studioShell.students.create({ name: '甲', phonePrimary: '13800000001', status: '在读', remainingLessons: 0, customFields: {} });
+    const s2 = await window.studioShell.students.create({ name: '乙', phonePrimary: '13800000002', status: '请假', remainingLessons: 0, customFields: {} });
     await window.studioShell.tags.setForStudent(s1.data.id, [a.data.id]);
     await window.studioShell.tags.setForStudent(s2.data.id, [b.data.id]);
   });

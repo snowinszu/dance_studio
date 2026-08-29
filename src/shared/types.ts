@@ -41,7 +41,7 @@ export interface PresetFieldDef {
   order: number;
   /** select / multiselect 的候选项 */
   options?: readonly string[];
-  /** 预设强制必填（当前仅 name / phone_primary） */
+  /** 预设强制必填（name / phone_primary / remaining_lessons / status） */
   required?: boolean;
   /** 仅打「敏感」标签，本版不做按角色脱敏 */
   sensitive?: boolean;

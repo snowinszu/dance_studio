@@ -39,10 +39,10 @@ async function writeSheet(name: string, rows: string[][]): Promise<string> {
 
 test('2 好行 + 1 坏行 → created=2, failed=1，失败行号正确', async () => {
   const file = await writeSheet('data.xlsx', [
-    ['姓名', '电话', '舞种', '身高'],
-    ['王一', '13800000001', '中国舞、拉丁', '120'], // row 2 好
-    ['王二', '13800000002', '', '130'], //             row 3 好
-    ['王三', 'not-a-phone', '', ''], //                 row 4 坏（手机号非法）
+    ['姓名', '电话', '舞种', '剩余课时', '身高'],
+    ['王一', '13800000001', '中国舞、拉丁', '20', '120'], // row 2 好
+    ['王二', '010-88886666', '', '0', '130'], //           row 3 好（座机电话放行）
+    ['王三', '13800000003', '', 'abc', ''], //             row 4 坏（剩余课时非数字）
   ]);
 
   const report = await importStudents({
@@ -51,6 +51,7 @@ test('2 好行 + 1 坏行 → created=2, failed=1，失败行号正确', async (
       name: '姓名',
       phone_primary: '电话',
       dance_types: '舞种',
+      remaining_lessons: '剩余课时',
       [height.fieldKey]: '身高',
     },
   });
@@ -59,7 +60,7 @@ test('2 好行 + 1 坏行 → created=2, failed=1，失败行号正确', async (
   assert.equal(report.failed, 1);
   assert.equal(report.failures.length, 1);
   assert.equal(report.failures[0]!.row, 4, '坏行是第 4 行');
-  assert.match(report.failures[0]!.reason, /phone_primary/);
+  assert.match(report.failures[0]!.reason, /remaining_lessons/);
 
   // 入库校验：王一的舞种被拆成数组，身高进 custom_fields
   const list = students.list({ search: '王一' });
