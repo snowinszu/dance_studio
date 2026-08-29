@@ -8,11 +8,20 @@
  * 所有 SQL 走预编译语句 + 命名参数，绝不把用户输入拼进语句。
  */
 import { getDb } from '../db/connection';
+import { AppError } from '../shared/app-error';
 import type {
+  Allocation,
+  AllocationListQuery,
+  AllocationListResult,
   InventoryItem,
   InventoryListQuery,
   InventoryListResult,
 } from '../shared/types';
+import type { ItemValues } from './inventory.validation';
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
 /** LIKE 通配符转义：% _ \ 前面加反斜杠，配合 SQL 里的 ESCAPE '\'。 */
 function escapeLike(input: string): string {
@@ -98,4 +107,172 @@ export function listItems(query: InventoryListQuery = {}): InventoryListResult {
   ).n;
 
   return { rows, total, lowStockCount };
+}
+
+/* ───────────────────────── 物件 CRUD ───────────────────────── */
+
+/** 某物件名是否已被「未软删」物件占用（编辑时排除自身）。 */
+function nameTaken(name: string, exceptId?: number): boolean {
+  const db = getDb();
+  const sql =
+    exceptId === undefined
+      ? `SELECT 1 FROM inventory_items WHERE name = @name AND deleted_at IS NULL LIMIT 1`
+      : `SELECT 1 FROM inventory_items WHERE name = @name AND deleted_at IS NULL AND id != @exceptId LIMIT 1`;
+  return db.prepare(sql).get({ name, exceptId }) !== undefined;
+}
+
+/** 读一条物件（含已软删除，供详情 / 导出用）；不存在返回 undefined。 */
+export function getItem(id: number): InventoryItem | undefined {
+  return getDb()
+    .prepare(`SELECT ${ITEM_COLUMNS} FROM inventory_items WHERE id = ?`)
+    .get(id) as InventoryItem | undefined;
+}
+
+/** 新建物件，返回自增 id。重名（未软删）→ ITEM_NAME_CONFLICT。 */
+export function createItem(values: ItemValues): { id: number } {
+  if (nameTaken(values.name)) {
+    throw new AppError('ITEM_NAME_CONFLICT', '物件已存在', { name: '物件已存在' });
+  }
+  const ts = nowIso();
+  const info = getDb()
+    .prepare(
+      `INSERT INTO inventory_items
+         (name, category, unit, quantity, low_stock_threshold, note, created_at, updated_at)
+       VALUES (@name, @category, @unit, @quantity, @lowStockThreshold, @note, @ts, @ts)`,
+    )
+    .run({
+      name: values.name,
+      category: values.category,
+      unit: values.unit,
+      quantity: values.quantity ?? 0,
+      lowStockThreshold: values.lowStockThreshold,
+      note: values.note,
+      ts,
+    });
+  return { id: Number(info.lastInsertRowid) };
+}
+
+/**
+ * 覆盖式更新一条物件。
+ * - quantity 为 undefined 表示「不改这一项」——用于「只想改分类 / 阈值」的场景
+ * - id 不存在或已软删除 → NOT_FOUND
+ * - 改名撞未软删同名物件 → ITEM_NAME_CONFLICT
+ */
+export function updateItem(id: number, values: ItemValues): { id: number } {
+  const db = getDb();
+  const current = db
+    .prepare(`SELECT id FROM inventory_items WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+
+  if (nameTaken(values.name, id)) {
+    throw new AppError('ITEM_NAME_CONFLICT', '物件已存在', { name: '物件已存在' });
+  }
+
+  const sets = [
+    'name = @name',
+    'category = @category',
+    'unit = @unit',
+    'low_stock_threshold = @lowStockThreshold',
+    'note = @note',
+    'updated_at = @ts',
+  ];
+  const params: Record<string, string | number | null> = {
+    id,
+    name: values.name,
+    category: values.category,
+    unit: values.unit,
+    lowStockThreshold: values.lowStockThreshold,
+    note: values.note,
+    ts: nowIso(),
+  };
+  if (values.quantity !== undefined) {
+    sets.push('quantity = @quantity');
+    params['quantity'] = values.quantity;
+  }
+
+  db.prepare(`UPDATE inventory_items SET ${sets.join(', ')} WHERE id = @id`).run(params);
+  return { id };
+}
+
+/** 软删除：只写 deleted_at。id 不存在或已删 → NOT_FOUND。 */
+export function softDeleteItem(id: number): { id: number } {
+  const db = getDb();
+  const current = db
+    .prepare(`SELECT id FROM inventory_items WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!current) throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+  const ts = nowIso();
+  db.prepare(`UPDATE inventory_items SET deleted_at = @ts, updated_at = @ts WHERE id = @id`).run({
+    ts,
+    id,
+  });
+  return { id };
+}
+
+/* ───────────────────────── 领用流水（读） ───────────────────────── */
+
+/**
+ * 领用流水列表：JOIN 出物件名 / 学员姓名 / 电话（物件即使已软删也照常带出），
+ * 按领取日期倒序，分页。claimed_at 是 YYYY-MM-DD 字符串，直接字符串比较即时间序。
+ */
+export function listAllocations(query: AllocationListQuery = {}): AllocationListResult {
+  const db = getDb();
+  const where: string[] = ['1 = 1'];
+  const params: Record<string, string | number> = {};
+
+  const dateFrom = (query.dateFrom ?? '').trim();
+  if (dateFrom) {
+    params['df'] = dateFrom;
+    where.push('a.claimed_at >= @df');
+  }
+  const dateTo = (query.dateTo ?? '').trim();
+  if (dateTo) {
+    params['dt'] = dateTo;
+    where.push('a.claimed_at <= @dt');
+  }
+  if (Number.isInteger(query.studentId)) {
+    params['sid'] = query.studentId as number;
+    where.push('a.student_id = @sid');
+  }
+  if (Number.isInteger(query.itemId)) {
+    params['iid'] = query.itemId as number;
+    where.push('a.item_id = @iid');
+  }
+
+  const whereSql = where.join(' AND ');
+
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM item_allocations a WHERE ${whereSql}`).get(params) as {
+      n: number;
+    }
+  ).n;
+
+  const limit = Number.isInteger(query.limit) ? Math.max(1, query.limit as number) : 100;
+  const offset = Number.isInteger(query.offset) ? Math.max(0, query.offset as number) : 0;
+  params['lim'] = limit;
+  params['off'] = offset;
+
+  const rows = db
+    .prepare(
+      `SELECT a.id,
+              a.item_id            AS itemId,
+              i.name               AS itemName,
+              a.student_id         AS studentId,
+              s.name               AS studentName,
+              s.phone_primary      AS studentPhone,
+              a.quantity,
+              a.claimed_at         AS claimedAt,
+              a.note,
+              a.created_at         AS createdAt
+         FROM item_allocations a
+         JOIN inventory_items i ON i.id = a.item_id
+         JOIN students        s ON s.id = a.student_id
+        WHERE ${whereSql}
+        ORDER BY a.claimed_at DESC, a.id DESC
+        LIMIT @lim OFFSET @off`,
+    )
+    .all(params) as Allocation[];
+
+  return { rows, total };
 }

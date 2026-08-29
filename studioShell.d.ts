@@ -5,10 +5,14 @@
  * 不进任何 tsconfig 的 include。真实实现见 src/preload.ts，契约类型见 src/shared/types.ts。
  */
 import type {
+  AllocationListQuery,
+  AllocationListResult,
   CustomFieldDef,
   CustomFieldInput,
   CustomFieldPatch,
   ImportReport,
+  InventoryItem,
+  InventoryItemInput,
   InventoryListQuery,
   InventoryListResult,
   IpcResult,
@@ -68,6 +72,11 @@ declare global {
 
     inventory: {
       listItems(query?: InventoryListQuery): Promise<IpcResult<InventoryListResult>>;
+      getItem(id: number): Promise<IpcResult<InventoryItem>>;
+      createItem(input: InventoryItemInput): Promise<IpcResult<{ id: number }>>;
+      updateItem(id: number, input: InventoryItemInput): Promise<IpcResult<{ id: number }>>;
+      deleteItem(id: number): Promise<IpcResult<{ id: number }>>;
+      allocations(query?: AllocationListQuery): Promise<IpcResult<AllocationListResult>>;
     };
   }
 

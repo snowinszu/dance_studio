@@ -36,6 +36,11 @@ const CH = {
   ioPickImportFile: 'io:pickImportFile',
   ioImportStudents: 'io:importStudents',
   inventoryListItems: 'inventory:listItems',
+  inventoryGetItem: 'inventory:getItem',
+  inventoryCreateItem: 'inventory:createItem',
+  inventoryUpdateItem: 'inventory:updateItem',
+  inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryListAllocations: 'inventory:listAllocations',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -83,6 +88,11 @@ const api = {
 
   inventory: {
     listItems: (query?: unknown) => invoke(CH.inventoryListItems, query),
+    getItem: (id: number) => invoke(CH.inventoryGetItem, id),
+    createItem: (input: unknown) => invoke(CH.inventoryCreateItem, input),
+    updateItem: (id: number, input: unknown) => invoke(CH.inventoryUpdateItem, id, input),
+    deleteItem: (id: number) => invoke(CH.inventoryDeleteItem, id),
+    allocations: (query?: unknown) => invoke(CH.inventoryListAllocations, query),
   },
 };
 

@@ -214,8 +214,246 @@ async function refreshItems() {
   );
 }
 
+/* ───────────────────────── 新建 / 编辑物件表单 ───────────────────────── */
+
+/** 表单字段定义：key 与主进程校验 errors 的 key 一一对应。 */
+const ITEM_FIELDS = [
+  { key: 'name', label: '物件名', required: true, type: 'text', placeholder: '如：练功服（女·S）' },
+  { key: 'category', label: '分类', type: 'text', placeholder: '如：服装 / 器材 / 教材（可留空）' },
+  { key: 'unit', label: '单位', type: 'text', placeholder: '件' },
+  { key: 'quantity', label: '库存数量', type: 'number', min: 0, step: 1 },
+  { key: 'lowStockThreshold', label: '预警阈值', type: 'number', min: 0, step: 1,
+    hint: '库存低于等于此值时，列表标「库存偏低」' },
+  { key: 'note', label: '备注', type: 'textarea' },
+];
+
+function itemFieldControl(f, initialValue) {
+  const common = { id: `f-${f.key}`, name: f.key };
+  if (f.type === 'textarea') {
+    return el('textarea', { ...common, rows: 3, text: initialValue == null ? '' : String(initialValue) });
+  }
+  const inp = el('input', {
+    ...common,
+    type: f.type === 'number' ? 'number' : 'text',
+    value: initialValue == null ? '' : String(initialValue),
+    placeholder: f.placeholder || null,
+  });
+  if (f.type === 'number') {
+    if (f.min != null) inp.min = String(f.min);
+    if (f.step != null) inp.step = String(f.step);
+    inp.inputMode = 'numeric';
+  }
+  return inp;
+}
+
+async function renderItemForm(opts) {
+  const isEdit = opts.mode === 'edit';
+  const item = opts.item || null;
+
+  const form = el('form', { id: 'item-form', novalidate: 'novalidate' });
+  const fieldset = el('fieldset', { class: 'form-group' },
+    el('legend', { text: isEdit ? '编辑物件' : '新建物件' }),
+  );
+
+  for (const f of ITEM_FIELDS) {
+    const initial = isEdit && item ? item[f.key] : undefined;
+    const control = itemFieldControl(f, initial);
+    fieldset.appendChild(
+      el('div', { class: 'field', dataset: { key: f.key } },
+        el('label', { for: `f-${f.key}` }, f.label, f.required ? el('span', { class: 'req', text: '＊' }) : null),
+        control,
+        f.hint ? el('div', { class: 'field-hint', text: f.hint }) : null,
+        el('div', { class: 'field-error' }),
+      ),
+    );
+  }
+
+  form.appendChild(fieldset);
+  const cancelHash = isEdit && item ? `#/items/${item.id}` : '#/items';
+  form.appendChild(
+    el('div', { class: 'form-actions' },
+      el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = cancelHash; } }, '取消'),
+      el('button', { class: 'btn btn-primary', type: 'submit' }, '保存'),
+    ),
+  );
+
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    void submitItemForm(form, { isEdit, id: item ? item.id : null });
+  });
+
+  view.replaceChildren(
+    el('div', { class: 'page-head' },
+      el('div', {},
+        el('h1', { class: 'page-title', text: isEdit && item ? `编辑 · ${item.name}` : '新建物件' }),
+        el('p', { class: 'page-sub', text: '带 ＊ 的为必填项' }),
+      ),
+    ),
+    form,
+  );
+}
+
+function clearItemErrors(form) {
+  for (const fld of form.querySelectorAll('.field.has-error')) fld.classList.remove('has-error');
+  for (const slot of form.querySelectorAll('.field .field-error')) slot.textContent = '';
+}
+
+function showItemErrors(form, fields) {
+  let first = null;
+  for (const [key, msg] of Object.entries(fields)) {
+    const fld = form.querySelector(`.field[data-key="${CSS.escape(key)}"]`);
+    if (!fld) continue;
+    fld.classList.add('has-error');
+    const slot = fld.querySelector('.field-error');
+    if (slot) slot.textContent = msg;
+    if (!first) first = fld;
+  }
+  if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+/** 读一个表单控件的值：数字框空 → undefined（编辑时表示「不改」），否则 Number()。 */
+function readItemField(form, f) {
+  const node = form.elements[f.key];
+  const raw = (node && node.value != null ? node.value : '').trim();
+  if (f.type === 'number') return raw === '' ? undefined : Number(raw);
+  return raw;
+}
+
+async function submitItemForm(form, ctx) {
+  clearItemErrors(form);
+  const input = {};
+  for (const f of ITEM_FIELDS) input[f.key] = readItemField(form, f);
+
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    const res = ctx.isEdit
+      ? unwrap(await shell.inventory.updateItem(ctx.id, input))
+      : unwrap(await shell.inventory.createItem(input));
+    toast('已保存');
+    location.hash = `#/items/${res.id}`;
+  } catch (e) {
+    if (e.code === 'VALIDATION_FAILED' && e.fields) {
+      showItemErrors(form, e.fields);
+      toast('请检查表单填写');
+    } else if (e.code === 'ITEM_NAME_CONFLICT') {
+      showItemErrors(form, { name: '物件已存在' });
+      toast('物件名重复');
+    } else if (e.code === 'NOT_FOUND') {
+      toast('物件不存在，可能已被删除');
+      location.hash = '#/items';
+    } else {
+      toast(`保存失败：${e.message}`);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ───────────────────────── 物件详情 ───────────────────────── */
+
+function dlRow(label, value, isEmpty) {
+  return el('div', { class: 'dl-row' },
+    el('dt', { text: label }),
+    el('dd', { class: isEmpty ? 'is-empty' : null, text: isEmpty ? '—' : String(value) }),
+  );
+}
+
+async function renderItemDetail(id) {
+  view.replaceChildren(el('div', { text: '载入物件…' }));
+
+  let item;
+  let allocations = [];
+  try {
+    item = unwrap(await shell.inventory.getItem(id));
+  } catch (e) {
+    view.replaceChildren(
+      el('div', { class: 'empty' },
+        el('strong', { text: e.code === 'NOT_FOUND' ? '找不到这件物件' : '加载失败' }),
+        el('span', { text: e.message }),
+        el('div', { style: 'margin-top:14px' },
+          el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
+        ),
+      ),
+    );
+    return;
+  }
+  try {
+    allocations = unwrap(await shell.inventory.allocations({ itemId: id, limit: 200 })).rows;
+  } catch {
+    allocations = [];
+  }
+
+  const low = item.quantity <= item.lowStockThreshold;
+  const deleted = item.deletedAt != null;
+
+  const head = el('div', { class: 'page-head' },
+    el('div', {},
+      el('h1', { class: 'page-title', text: item.name }),
+      el('p', { class: 'page-sub', text: deleted ? '此物件已删除（仅历史可见）' : `当前库存 ${item.quantity} ${item.unit}` }),
+    ),
+    el('div', { class: 'detail-actions' },
+      !deleted && el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = `#/items/${id}/edit`; } }, '编辑'),
+      !deleted && el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => void confirmDeleteItem(item) }, '删除'),
+      el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
+    ),
+  );
+
+  const info = el('section', { class: 'detail-group open' },
+    el('div', { class: 'detail-group-head' }, el('span', { text: '物件信息' })),
+    el('dl', { class: 'detail-group-body' },
+      dlRow('物件名', item.name, false),
+      dlRow('分类', item.category, !item.category),
+      dlRow('单位', item.unit, false),
+      el('div', { class: 'dl-row' },
+        el('dt', { text: '当前库存' }),
+        el('dd', {},
+          `${item.quantity} ${item.unit}`,
+          low ? el('span', { class: 'low-badge', style: 'margin-left:8px' }, '库存偏低') : null,
+        ),
+      ),
+      dlRow('预警阈值', item.lowStockThreshold, false),
+      dlRow('备注', item.note, !item.note),
+    ),
+  );
+
+  const historyRows = allocations.length
+    ? allocations.map((a) =>
+        el('div', { class: 'student-row', style: 'cursor:default' },
+          el('div', { class: 'row-main' },
+            el('div', { class: 'row-name', text: a.studentName }),
+            el('div', { class: 'row-meta', text: `${a.claimedAt}${a.note ? ' · ' + a.note : ''}` }),
+          ),
+          el('span', { class: 'row-qty', text: `领 ${a.quantity} ${item.unit}` }),
+        ),
+      )
+    : [el('div', { class: 'empty' }, el('strong', { text: '暂无领用记录' }))];
+
+  const history = el('section', { class: 'detail-group open' },
+    el('div', { class: 'detail-group-head' }, el('span', { text: `领用历史（${allocations.length}）` })),
+    el('div', { class: 'detail-group-body', style: 'grid-template-columns:1fr; gap:8px' }, ...historyRows),
+  );
+
+  view.replaceChildren(head, info, history);
+}
+
+async function confirmDeleteItem(item) {
+  const yes = window.confirm(
+    `确定要删除物件「${item.name}」吗？\n\n删除后不在列表显示，但已有的领用记录与导出仍可见（数据保留在库中）。`,
+  );
+  if (!yes) return;
+  try {
+    unwrap(await shell.inventory.deleteItem(item.id));
+    toast('已删除');
+    location.hash = '#/items';
+  } catch (e) {
+    toast(e.code === 'NOT_FOUND' ? '该物件已被删除' : `删除失败：${e.message}`);
+    location.hash = '#/items';
+  }
+}
+
 /* ───────────────────────── 尚未接入的视图（占位） ─────────────────────────
-   这些路由在后续 issue 里实现；先给一个简短占位，避免地址栏改动后白屏。 */
+   #/allocate（#28）、#/allocations（#29）在后续 issue 里实现。 */
 
 function renderStub(title) {
   view.replaceChildren(
@@ -224,11 +462,7 @@ function renderStub(title) {
         el('h1', { class: 'page-title', text: title }),
         el('p', { class: 'page-sub', text: '此功能即将上线。' }),
       ),
-      el('button', {
-        class: 'btn',
-        type: 'button',
-        onclick: () => { location.hash = '#/items'; },
-      }, '返回物件列表'),
+      el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回物件列表'),
     ),
     el('div', { class: 'empty' },
       el('strong', { text: '开发中' }),
@@ -250,9 +484,12 @@ async function route() {
   try {
     if (head === 'allocate') return renderStub('分配物件');
     if (head === 'allocations') return renderStub('领用流水');
-    if (head === 'items' && id === 'new') return renderStub('新建物件');
-    if (head === 'items' && id && sub === 'edit') return renderStub('编辑物件');
-    if (head === 'items' && id) return renderStub('物件详情');
+    if (head === 'items' && id === 'new') return await renderItemForm({ mode: 'new' });
+    if (head === 'items' && id && sub === 'edit') {
+      const item = unwrap(await shell.inventory.getItem(Number(id)));
+      return await renderItemForm({ mode: 'edit', item });
+    }
+    if (head === 'items' && id) return await renderItemDetail(Number(id));
     return await renderItems();
   } catch (e) {
     view.replaceChildren(

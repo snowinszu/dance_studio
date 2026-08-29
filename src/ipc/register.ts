@@ -7,13 +7,16 @@
  */
 import { dialog, ipcMain } from 'electron';
 import type {
+  AllocationListQuery,
   CustomFieldInput,
   CustomFieldPatch,
+  InventoryItemInput,
   InventoryListQuery,
   IpcResult,
   ListQuery,
   StudentInput,
 } from '../shared/types';
+import { validateItem } from '../domain/inventory.validation';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
@@ -183,5 +186,34 @@ export function registerIpc(): void {
   // —— 库存管理 ——
   handle(CH.inventoryListItems, (query?: InventoryListQuery) =>
     inventoryRepo.listItems(query ?? {}),
+  );
+
+  handle(CH.inventoryGetItem, (id?: number) => {
+    const item = inventoryRepo.getItem(Number(id));
+    if (!item) throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+    return item;
+  });
+
+  handle(CH.inventoryCreateItem, (input?: InventoryItemInput) => {
+    const { values, errors } = validateItem(input ?? ({} as InventoryItemInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.createItem(values);
+  });
+
+  handle(CH.inventoryUpdateItem, (id?: number, input?: InventoryItemInput) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少物件 id');
+    const { values, errors } = validateItem(input ?? ({} as InventoryItemInput), { isEdit: true });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.updateItem(Number(id), values);
+  });
+
+  handle(CH.inventoryDeleteItem, (id?: number) => inventoryRepo.softDeleteItem(Number(id)));
+
+  handle(CH.inventoryListAllocations, (query?: AllocationListQuery) =>
+    inventoryRepo.listAllocations(query ?? {}),
   );
 }

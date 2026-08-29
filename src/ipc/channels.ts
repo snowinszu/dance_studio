@@ -36,6 +36,11 @@ export const CH = {
 
   // 库存管理
   inventoryListItems: 'inventory:listItems',
+  inventoryGetItem: 'inventory:getItem',
+  inventoryCreateItem: 'inventory:createItem',
+  inventoryUpdateItem: 'inventory:updateItem',
+  inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryListAllocations: 'inventory:listAllocations',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];
