@@ -1,0 +1,38 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # postinstall（scripts/ensure-electron.js）会拉取对应平台的 Electron 二进制
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # Electron 与 Chromium 共用一套系统库，用 Playwright 的 install-deps 一次装齐
+      - run: npx playwright install-deps chromium
+
+      # Linux 上 Electron 需要一个显示服务器；xvfb-run 提供虚拟屏
+      - run: xvfb-run --auto-servernum npm run test:e2e
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

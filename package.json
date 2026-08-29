@@ -13,6 +13,9 @@
     "start": "node scripts/start.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "playwright test",
+    "test": "npm run test:e2e",
     "postinstall": "node scripts/ensure-electron.js"
   },
   "devDependencies": {

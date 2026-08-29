@@ -1,13 +1,13 @@
 // ESLint 扁平配置。
-// - src/**/*.ts：Electron 主进程 / preload，套用 typescript-eslint 推荐规则
+// - src/**、tests/**、*.config.ts：TypeScript，套用 typescript-eslint 推荐规则
 // - scripts/**/*.js：Node 启动器，CommonJS 语法，只做基本解析
-// - dist/ 与 node_modules/ 不检查
+// - dist/、node_modules/、playwright 产物目录不检查
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/'] },
+  { ignores: ['dist/', 'node_modules/', 'playwright-report/', 'test-results/'] },
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'tests/**/*.ts', '*.config.ts'],
     extends: [tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
