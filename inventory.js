@@ -117,6 +117,7 @@ async function renderItems() {
       ),
       el('div', { class: 'detail-actions' },
         el('button', { class: 'btn', type: 'button', onclick: (ev) => void exportItemsXlsx(ev.currentTarget) }, '导出台账'),
+        el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/import'; } }, '导入台账'),
         el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/allocations'; } }, '领用流水'),
         el('button', {
           class: 'btn btn-primary',
@@ -767,6 +768,141 @@ async function confirmDeleteAllocation(a) {
   }
 }
 
+/* ───────────────────────── 导入物件台账 ───────────────────────── */
+
+const IMPORT_FIELDS = [
+  { key: 'name', label: '物件名', required: true },
+  { key: 'quantity', label: '入库数量', required: true },
+  { key: 'category', label: '分类' },
+  { key: 'unit', label: '单位' },
+  { key: 'lowStockThreshold', label: '预警阈值' },
+  { key: 'note', label: '备注' },
+];
+
+async function renderImport() {
+  view.replaceChildren(
+    el('div', { class: 'page-head' },
+      el('div', {},
+        el('h1', { class: 'page-title', text: '导入物件台账' }),
+        el('p', { class: 'page-sub', text: '物件名匹配已有物件则累加入库数量，否则新建；不导入领用流水' }),
+      ),
+      el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
+    ),
+    el('div', { id: 'imp-body' }),
+  );
+  const body = document.getElementById('imp-body');
+
+  const step1 = el('div', { class: 'form-group' },
+    el('div', { class: 'group-title', text: '第 1 步：准备文件' }),
+    el('p', { class: 'page-sub', text: '没有模板？先下载一个，按表头填好再回来选文件。' }),
+    el('div', { class: 'form-actions', style: 'justify-content:flex-start' },
+      el('button', {
+        class: 'btn', type: 'button',
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            const { filePath } = unwrap(await shell.inventory.downloadTemplate());
+            toast(`模板已保存到 ${filePath}`);
+          } catch (e) { if (e.code !== 'IO_CANCELLED') toast(`下载失败：${e.message}`); }
+          finally { btn.disabled = false; }
+        },
+      }, '下载模板'),
+      el('button', {
+        class: 'btn btn-primary', type: 'button',
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            const preview = unwrap(await shell.inventory.pickImportFile());
+            renderMapping(preview);
+          } catch (e) { if (e.code !== 'IO_CANCELLED') toast(`读取失败：${e.message}`); }
+          finally { btn.disabled = false; }
+        },
+      }, '选择文件…'),
+    ),
+  );
+  body.replaceChildren(step1);
+
+  function renderMapping(preview) {
+    const { filePath, headers, sample } = preview;
+    const opts = headers.filter((h) => h);
+    const selects = new Map();
+
+    const rows = IMPORT_FIELDS.map((f) => {
+      const sel = el('select', {},
+        el('option', { value: '' }, '（不导入）'),
+        ...opts.map((h) => el('option', { value: h }, h)),
+      );
+      if (headers.includes(f.label)) sel.value = f.label; // 表头与字段名一致则自动选中
+      sel.addEventListener('change', updateStartBtn);
+      selects.set(f.key, sel);
+      return el('tr', { dataset: { key: f.key } },
+        el('td', {}, f.label, f.required ? el('span', { class: 'req', text: ' ＊' }) : null),
+        el('td', {}, sel),
+      );
+    });
+
+    const startBtn = el('button', { class: 'btn btn-primary', type: 'button' }, '开始导入');
+    const currentMapping = () => {
+      const m = {};
+      for (const [key, sel] of selects) if (sel.value) m[key] = sel.value;
+      return m;
+    };
+    function updateStartBtn() {
+      const m = currentMapping();
+      startBtn.disabled = !(m['name'] && m['quantity']);
+    }
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      try {
+        const report = unwrap(await shell.inventory.importItems({ filePath, mapping: currentMapping() }));
+        renderReport(report);
+      } catch (e) {
+        toast(`导入失败：${e.message}`);
+        startBtn.disabled = false;
+      }
+    });
+
+    const sampleNote = sample.length
+      ? el('p', { class: 'page-sub', text: `示例首行：${sample[0].filter(Boolean).slice(0, 6).join(' | ')}` })
+      : null;
+
+    body.replaceChildren(
+      el('div', { class: 'form-group' },
+        el('div', { class: 'group-title', text: '第 2 步：列映射' }),
+        el('p', { class: 'page-sub', text: `文件：${filePath}` }),
+        sampleNote,
+        el('table', { class: 'map-table' },
+          el('thead', {}, el('tr', {}, el('th', {}, '模板字段'), el('th', {}, '表格列'))),
+          el('tbody', {}, ...rows),
+        ),
+        el('div', { class: 'form-actions' }, startBtn),
+      ),
+    );
+    updateStartBtn();
+  }
+
+  function renderReport(report) {
+    body.replaceChildren(
+      el('div', { class: 'form-group' },
+        el('div', { class: 'group-title', text: '导入完成' }),
+        el('p', {}, `新建 ${report.created} 个，更新 ${report.updated} 个，失败 ${report.failed} 行。`),
+        report.failures.length
+          ? el('div', { class: 'fa-list' },
+              ...report.failures.map((f) =>
+                el('div', { class: 'fa-item' }, el('div', { class: 'fa-meta', text: `第 ${f.row} 行：${f.reason}` })),
+              ),
+            )
+          : null,
+        el('div', { class: 'form-actions' },
+          el('button', { class: 'btn btn-primary', type: 'button', onclick: () => { location.hash = '#/items'; } }, '完成'),
+        ),
+      ),
+    );
+  }
+}
+
 /* ───────────────────────── 路由 ───────────────────────── */
 
 function parseRoute() {
@@ -780,6 +916,7 @@ async function route() {
   try {
     if (head === 'allocate') return await renderAllocateForm(id);
     if (head === 'allocations') return await renderAllocations();
+    if (head === 'import') return await renderImport();
     if (head === 'items' && id === 'new') return await renderItemForm({ mode: 'new' });
     if (head === 'items' && id && sub === 'edit') {
       const item = unwrap(await shell.inventory.getItem(Number(id)));

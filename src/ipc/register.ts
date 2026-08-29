@@ -18,8 +18,14 @@ import type {
   StudentInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
-import { exportAllocations, exportItems } from '../io/inventory-xlsx';
-import { pickSavePath, ymdCompact } from '../io/xlsx-util';
+import {
+  buildItemTemplate,
+  exportAllocations,
+  exportItems,
+  importItems,
+  readItemsPreview,
+} from '../io/inventory-xlsx';
+import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
@@ -263,4 +269,30 @@ export function registerIpc(): void {
       );
     }
   });
+
+  handle(CH.inventoryDownloadTemplate, async () => {
+    const filePath = await pickSavePath('下载物件导入模板', '物件导入模板.xlsx');
+    try {
+      await buildItemTemplate(filePath);
+      return { filePath };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.inventoryPickImportFile, async () => {
+    const filePath = await pickOpenPath('选择要导入的 Excel');
+    return readItemsPreview(filePath);
+  });
+
+  handle(
+    CH.inventoryImportItems,
+    (args?: { filePath?: string; mapping?: Record<string, string> }) => {
+      if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
+      return importItems({ filePath: args.filePath, mapping: args.mapping ?? {} });
+    },
+  );
 }

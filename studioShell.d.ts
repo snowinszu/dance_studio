@@ -12,6 +12,7 @@ import type {
   CustomFieldInput,
   CustomFieldPatch,
   ImportReport,
+  InventoryImportReport,
   InventoryItem,
   InventoryItemInput,
   InventoryListQuery,
@@ -90,6 +91,14 @@ declare global {
       exportAllocations(
         query?: AllocationListQuery,
       ): Promise<IpcResult<{ filePath: string; count: number }>>;
+      downloadTemplate(): Promise<IpcResult<{ filePath: string }>>;
+      pickImportFile(): Promise<
+        IpcResult<{ filePath: string; headers: string[]; sample: string[][] }>
+      >;
+      importItems(args: {
+        filePath: string;
+        mapping: Record<string, string>;
+      }): Promise<IpcResult<InventoryImportReport>>;
     };
   }
 
