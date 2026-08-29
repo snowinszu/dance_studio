@@ -18,6 +18,8 @@ import type {
   StudentInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
+import { exportAllocations, exportItems } from '../io/inventory-xlsx';
+import { pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
@@ -234,5 +236,31 @@ export function registerIpc(): void {
   handle(CH.inventoryDeleteAllocation, (id?: number) => {
     if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少领用记录 id');
     return inventoryRepo.deleteAllocation(Number(id));
+  });
+
+  handle(CH.inventoryExportItems, async (query?: InventoryListQuery) => {
+    const filePath = await pickSavePath('导出物件台账', `物件台账-${ymdCompact()}.xlsx`);
+    try {
+      const count = await exportItems(query ?? {}, filePath);
+      return { filePath, count };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.inventoryExportAllocations, async (query?: AllocationListQuery) => {
+    const filePath = await pickSavePath('导出领用流水', `领用流水-${ymdCompact()}.xlsx`);
+    try {
+      const count = await exportAllocations(query ?? {}, filePath);
+      return { filePath, count };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   });
 }

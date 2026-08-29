@@ -116,6 +116,7 @@ async function renderItems() {
         el('p', { class: 'page-sub', id: 'items-count', text: '载入中…' }),
       ),
       el('div', { class: 'detail-actions' },
+        el('button', { class: 'btn', type: 'button', onclick: (ev) => void exportItemsXlsx(ev.currentTarget) }, '导出台账'),
         el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/allocations'; } }, '领用流水'),
         el('button', {
           class: 'btn btn-primary',
@@ -130,6 +131,23 @@ async function renderItems() {
   );
 
   await refreshItems();
+}
+
+/** 把当前筛选到的物件台账导出为 xlsx。 */
+async function exportItemsXlsx(btn) {
+  btn.disabled = true;
+  try {
+    const { filePath, count } = unwrap(await shell.inventory.exportItems({
+      search: listState.search.trim() || undefined,
+      category: listState.category || undefined,
+    }));
+    toast(`已导出 ${count} 种物件到 ${filePath}`);
+  } catch (e) {
+    if (e.code === 'IO_CANCELLED') return; // 用户取消，静默
+    toast(`导出失败：${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /** 只刷新列表主体 + 计数 + 低库存条，不动工具条（保住搜索框焦点）。 */
@@ -649,6 +667,7 @@ async function renderAllocations() {
         el('p', { class: 'page-sub', id: 'alloc-count', text: '载入中…' }),
       ),
       el('div', { class: 'detail-actions' },
+        el('button', { class: 'btn', type: 'button', onclick: (ev) => void exportAllocationsXlsx(ev.currentTarget) }, '导出流水'),
         el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = '#/allocate'; } }, '＋ 分配'),
         el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
       ),
@@ -661,6 +680,20 @@ async function renderAllocations() {
   );
 
   await refreshAllocations();
+}
+
+/** 把当前筛选到的领用流水导出为 xlsx。 */
+async function exportAllocationsXlsx(btn) {
+  btn.disabled = true;
+  try {
+    const { filePath, count } = unwrap(await shell.inventory.exportAllocations(allocQuery()));
+    toast(`已导出 ${count} 条到 ${filePath}`);
+  } catch (e) {
+    if (e.code === 'IO_CANCELLED') return;
+    toast(`导出失败：${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function refreshAllocations() {

@@ -84,6 +84,12 @@ declare global {
       deleteAllocation(
         id: number,
       ): Promise<IpcResult<{ id: number; itemId: number; remaining: number }>>;
+      exportItems(
+        query?: InventoryListQuery,
+      ): Promise<IpcResult<{ filePath: string; count: number }>>;
+      exportAllocations(
+        query?: AllocationListQuery,
+      ): Promise<IpcResult<{ filePath: string; count: number }>>;
     };
   }
 

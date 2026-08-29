@@ -43,6 +43,8 @@ export const CH = {
   inventoryAllocate: 'inventory:allocate',
   inventoryListAllocations: 'inventory:listAllocations',
   inventoryDeleteAllocation: 'inventory:deleteAllocation',
+  inventoryExportItems: 'inventory:exportItems',
+  inventoryExportAllocations: 'inventory:exportAllocations',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];
