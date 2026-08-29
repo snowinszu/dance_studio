@@ -33,6 +33,9 @@ export const CH = {
   ioDownloadTemplate: 'io:downloadTemplate',
   ioPickImportFile: 'io:pickImportFile',
   ioImportStudents: 'io:importStudents',
+
+  // 库存管理
+  inventoryListItems: 'inventory:listItems',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

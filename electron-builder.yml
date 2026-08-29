@@ -18,6 +18,8 @@ files:
   - placeholder.html
   - students.html
   - students.js
+  - inventory.html
+  - inventory.js
   - colors_and_type.css
   - package.json
 

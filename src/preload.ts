@@ -35,6 +35,7 @@ const CH = {
   ioDownloadTemplate: 'io:downloadTemplate',
   ioPickImportFile: 'io:pickImportFile',
   ioImportStudents: 'io:importStudents',
+  inventoryListItems: 'inventory:listItems',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -78,6 +79,10 @@ const api = {
     downloadTemplate: () => invoke(CH.ioDownloadTemplate),
     pickImportFile: () => invoke(CH.ioPickImportFile),
     importStudents: (args: unknown) => invoke(CH.ioImportStudents, args),
+  },
+
+  inventory: {
+    listItems: (query?: unknown) => invoke(CH.inventoryListItems, query),
   },
 };
 

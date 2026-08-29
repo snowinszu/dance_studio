@@ -9,6 +9,8 @@ import type {
   CustomFieldInput,
   CustomFieldPatch,
   ImportReport,
+  InventoryListQuery,
+  InventoryListResult,
   IpcResult,
   ListQuery,
   ListResult,
@@ -62,6 +64,10 @@ declare global {
         filePath: string;
         mapping: Record<string, string>;
       }): Promise<IpcResult<ImportReport>>;
+    };
+
+    inventory: {
+      listItems(query?: InventoryListQuery): Promise<IpcResult<InventoryListResult>>;
     };
   }
 

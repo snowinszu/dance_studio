@@ -9,6 +9,7 @@ import { dialog, ipcMain } from 'electron';
 import type {
   CustomFieldInput,
   CustomFieldPatch,
+  InventoryListQuery,
   IpcResult,
   ListQuery,
   StudentInput,
@@ -18,6 +19,7 @@ import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
+import * as inventoryRepo from '../domain/inventory.repo';
 import { buildSchema, validateStudent } from '../domain/validation';
 import { exportStudents } from '../io/export-xlsx';
 import { buildTemplate, importStudents, readImportPreview } from '../io/import-xlsx';
@@ -177,4 +179,9 @@ export function registerIpc(): void {
     if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
     return importStudents({ filePath: args.filePath, mapping: args.mapping ?? {} });
   });
+
+  // —— 库存管理 ——
+  handle(CH.inventoryListItems, (query?: InventoryListQuery) =>
+    inventoryRepo.listItems(query ?? {}),
+  );
 }
