@@ -5,3 +5,4 @@ dist/
 .idea/
 playwright-report/
 test-results/
+release/

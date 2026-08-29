@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "晓·乐舞艺术空间 · 综合管理平台（Electron 桌面应用）",
+  "author": "晓·乐舞艺术空间",
   "main": "dist/main.js",
   "engines": {
     "node": ">=22.13"
@@ -16,12 +17,16 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "test": "npm run test:e2e",
+    "make:icon": "node scripts/make-icon.mjs",
+    "predist:win": "npm run build",
+    "dist:win": "electron-builder --win nsis portable --x64 --publish never",
     "postinstall": "node scripts/ensure-electron.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^22.13.0",
     "electron": "43.3.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.9.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.0.0"

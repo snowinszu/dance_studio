@@ -1,0 +1,39 @@
+# electron-builder 打包配置。见 https://www.electron.build/
+# 本项目当前只针对 Windows x64（NSIS 安装包 + portable 免安装版），且不做代码签名。
+
+appId: com.xiaolewu.dance-studio
+productName: 晓·乐舞艺术空间
+
+directories:
+  # 打包产物放 release/，不与 tsc 的 dist/（编译产物）冲突
+  output: release
+  buildResources: build
+
+# 只打包运行时需要的文件；src/ tests/ ui_kits/ tasks/ scripts/ .github/ 等一律排除。
+# node_modules 由 electron-builder 按生产依赖自动处理（本项目无生产依赖）。
+files:
+  - dist/**/*
+  - "!dist/**/*.map"
+  - index.html
+  - placeholder.html
+  - colors_and_type.css
+  - package.json
+
+# 无原生模块，跳过重建以加速
+npmRebuild: false
+
+win:
+  target:
+    - nsis
+    - portable
+  icon: build/icon.ico
+
+nsis:
+  # 非一键：给用户安装向导，可改安装目录
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  artifactName: dance-studio-Setup-${version}-${arch}.${ext}
+
+portable:
+  artifactName: dance-studio-Portable-${version}-${arch}.${ext}
