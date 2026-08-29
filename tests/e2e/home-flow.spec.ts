@@ -2,8 +2,8 @@ import { test, expect, _electron as electron } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 
 /**
- * 端到端：启动真实 Electron → 首页 → 点卡片进占位页 → 点「返回首页」回首页，
- * 外加一条边界（占位页无 app 参数）。
+ * 端到端：启动真实 Electron → 首页 → 点「学员档案」进入其列表页 → 点「返回首页」回首页，
+ * 外加一条边界（占位页无 app 参数，仍服务于其余在建卡片）。
  *
  * 每个用例都自己启动 / 关闭应用（beforeEach / afterEach），彼此独立、可重复。
  */
@@ -40,7 +40,7 @@ test.afterEach(async () => {
   await app.close();
 });
 
-test('首页 → 学员档案占位页 → 返回首页 的完整流程', async () => {
+test('首页 → 学员档案列表页 → 返回首页 的完整流程', async () => {
   // —— 首页：恰好 5 张卡，且不含已移除的应用 ——
   await expect(page.locator('.app-card')).toHaveCount(5);
   await expect(page.locator('.apps-count')).toHaveText('5 个应用');
@@ -50,19 +50,16 @@ test('首页 → 学员档案占位页 → 返回首页 的完整流程', async 
     expect(homeText, `首页不应再出现「${name}」`).not.toContain(name);
   }
 
-  // —— 点「学员档案」卡片，同一窗口导航到占位页 ——
+  // —— 点「学员档案」卡片，同一窗口导航到其列表页 ——
   await page.locator('.app-card', { hasText: '学员档案' }).click();
-  await page.waitForURL(/placeholder\.html\?app=students$/);
+  await page.waitForURL(/students\.html(?:#.*)?$/);
   await page.waitForLoadState('domcontentloaded');
 
-  await expect(page.locator('#ph-title')).toHaveText('学员档案');
-  await expect(page.locator('#ph-standby')).toHaveText('敬请期待');
+  await expect(page.locator('.page-title')).toHaveText('学员档案');
   await expect(page).toHaveTitle(/学员档案/);
-  await expect(page).toHaveTitle(/敬请期待/);
-
-  const placeholderText = await page.locator('body').innerText();
-  expect(placeholderText).toContain('学员档案');
-  expect(placeholderText).toContain('敬请期待');
+  // 列表页骨架：新建入口 + 列表容器（可能是空态）
+  await expect(page.getByRole('button', { name: /新建学员/ })).toBeVisible();
+  await expect(page.locator('#list-body')).toBeVisible();
 
   // —— 点「返回首页」回到首页 ——
   await page.getByRole('link', { name: '返回首页' }).click();
