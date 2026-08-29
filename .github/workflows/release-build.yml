@@ -20,7 +20,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # 固定 windows-2022（VS 2022）。better-sqlite3 是原生模块，npm ci 与
+    # electron-builder 打包都要用 node-gyp 编译它；当前依赖树里的
+    # @electron/node-gyp@10.2.0-electron.1 无法识别 windows-latest 上的
+    # Visual Studio 2026（报 "unknown version undefined"）。
+    # TODO: 待本地开发统一到 Node 22 后，把 @electron/rebuild 升到 ^4（改用
+    #       node-gyp@12，支持 VS 2026），即可回到 windows-latest。
+    runs-on: windows-2022
     env:
       GH_TOKEN: ${{ github.token }}
     outputs:
@@ -33,7 +39,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      # postinstall（scripts/ensure-electron.js）会拉取 win32 版 Electron 二进制
+      # node-gyp 需要 Python；固定 3.12，避免 runner 默认 Python 漂移到
+      # node-gyp 10.x 不兼容的新版本
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # postinstall（scripts/ensure-electron.js）会拉取 win32 版 Electron 二进制，
+      # 随后 electron-rebuild 按 Electron ABI 重建 better-sqlite3
       - run: npm ci
 
       # 解析版本：有输入则校验 semver 并写入 package.json；否则沿用 package.json
