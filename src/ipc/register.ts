@@ -7,17 +7,31 @@
  */
 import { dialog, ipcMain } from 'electron';
 import type {
+  AllocationInput,
+  AllocationListQuery,
   CustomFieldInput,
   CustomFieldPatch,
+  InventoryItemInput,
+  InventoryListQuery,
   IpcResult,
   ListQuery,
   StudentInput,
 } from '../shared/types';
+import { validateAllocation, validateItem } from '../domain/inventory.validation';
+import {
+  buildItemTemplate,
+  exportAllocations,
+  exportItems,
+  importItems,
+  readItemsPreview,
+} from '../io/inventory-xlsx';
+import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
+import * as inventoryRepo from '../domain/inventory.repo';
 import { buildSchema, validateStudent } from '../domain/validation';
 import { exportStudents } from '../io/export-xlsx';
 import { buildTemplate, importStudents, readImportPreview } from '../io/import-xlsx';
@@ -177,4 +191,108 @@ export function registerIpc(): void {
     if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
     return importStudents({ filePath: args.filePath, mapping: args.mapping ?? {} });
   });
+
+  // —— 库存管理 ——
+  handle(CH.inventoryListItems, (query?: InventoryListQuery) =>
+    inventoryRepo.listItems(query ?? {}),
+  );
+
+  handle(CH.inventoryGetItem, (id?: number) => {
+    const item = inventoryRepo.getItem(Number(id));
+    if (!item) throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+    return item;
+  });
+
+  handle(CH.inventoryCreateItem, (input?: InventoryItemInput) => {
+    const { values, errors } = validateItem(input ?? ({} as InventoryItemInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.createItem(values);
+  });
+
+  handle(CH.inventoryUpdateItem, (id?: number, input?: InventoryItemInput) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少物件 id');
+    const { values, errors } = validateItem(input ?? ({} as InventoryItemInput), { isEdit: true });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.updateItem(Number(id), values);
+  });
+
+  handle(CH.inventoryDeleteItem, (id?: number) => inventoryRepo.softDeleteItem(Number(id)));
+
+  handle(CH.inventoryAllocate, (input?: AllocationInput) => {
+    const p = input ?? ({} as AllocationInput);
+    const item = inventoryRepo.getItem(Number(p.itemId));
+    if (!item || item.deletedAt != null) {
+      throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+    }
+    const { values, errors } = validateAllocation(p, item);
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.allocate(values);
+  });
+
+  handle(CH.inventoryListAllocations, (query?: AllocationListQuery) =>
+    inventoryRepo.listAllocations(query ?? {}),
+  );
+
+  handle(CH.inventoryDeleteAllocation, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少领用记录 id');
+    return inventoryRepo.deleteAllocation(Number(id));
+  });
+
+  handle(CH.inventoryExportItems, async (query?: InventoryListQuery) => {
+    const filePath = await pickSavePath('导出物件台账', `物件台账-${ymdCompact()}.xlsx`);
+    try {
+      const count = await exportItems(query ?? {}, filePath);
+      return { filePath, count };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.inventoryExportAllocations, async (query?: AllocationListQuery) => {
+    const filePath = await pickSavePath('导出领用流水', `领用流水-${ymdCompact()}.xlsx`);
+    try {
+      const count = await exportAllocations(query ?? {}, filePath);
+      return { filePath, count };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.inventoryDownloadTemplate, async () => {
+    const filePath = await pickSavePath('下载物件导入模板', '物件导入模板.xlsx');
+    try {
+      await buildItemTemplate(filePath);
+      return { filePath };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.inventoryPickImportFile, async () => {
+    const filePath = await pickOpenPath('选择要导入的 Excel');
+    return readItemsPreview(filePath);
+  });
+
+  handle(
+    CH.inventoryImportItems,
+    (args?: { filePath?: string; mapping?: Record<string, string> }) => {
+      if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
+      return importItems({ filePath: args.filePath, mapping: args.mapping ?? {} });
+    },
+  );
 }

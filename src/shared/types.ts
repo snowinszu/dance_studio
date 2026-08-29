@@ -269,4 +269,137 @@ export type IpcErrorCode =
   | 'IMPORT_TOO_LARGE'
   | 'IO_CANCELLED'
   | 'IO_WRITE_FAILED'
-  | 'DB_ERROR';
+  | 'DB_ERROR'
+  // —— 库存管理 ——
+  /** 领取数量大于当前库存 */
+  | 'INSUFFICIENT_STOCK'
+  /** 物件名与未软删物件重名 */
+  | 'ITEM_NAME_CONFLICT';
+
+// ===========================================================================
+// 库存管理模块
+// ===========================================================================
+
+/**
+ * 一件「物件」（练功服 / 道具 / 教材……）的台账。
+ * quantity 是当前在库数的权威值——不是汇总领用流水实时算出来的。
+ * 时间戳同样是 ISO 8601 字符串。
+ */
+export interface InventoryItem {
+  id: number;
+  name: string;
+  /** 自由文本分类，可空；无字典表、无下拉 */
+  category: string | null;
+  /** 计量单位，缺省「件」 */
+  unit: string;
+  /** 当前在库数，整数 ≥ 0 */
+  quantity: number;
+  /** 低于等于此值，列表标「库存偏低」；整数 ≥ 0 */
+  lowStockThreshold: number;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** 非 null 即已软删除：不进列表 / 分配下拉，但历史流水与导出仍可见 */
+  deletedAt: string | null;
+}
+
+/**
+ * 新建 / 编辑物件的入参。
+ * 编辑时 quantity 省略则保持原值，给出则直接覆盖（不留调整痕迹）。
+ */
+export interface InventoryItemInput {
+  name: string;
+  category?: string | null;
+  /** 省略或空串 → '件' */
+  unit?: string | null;
+  /** 新建省略 → 0 */
+  quantity?: number;
+  /** 省略 → 0 */
+  lowStockThreshold?: number;
+  note?: string | null;
+}
+
+/** 物件列表查询条件。 */
+export interface InventoryListQuery {
+  /** 匹配 name 子串 */
+  search?: string;
+  /** 精确匹配分类 */
+  category?: string;
+  /** 只看 quantity <= low_stock_threshold 的物件 */
+  lowStockOnly?: boolean;
+  /** 默认 100 */
+  limit?: number;
+  /** 默认 0 */
+  offset?: number;
+}
+
+export interface InventoryListResult {
+  rows: InventoryItem[];
+  /** 满足筛选（除分页）的物件数 */
+  total: number;
+  /**
+   * 未软删物件中 quantity <= low_stock_threshold 的数量。
+   * 独立统计，不受 search / category / 分页影响——供列表顶部「N 个物件库存偏低」汇总。
+   */
+  lowStockCount: number;
+}
+
+/**
+ * 一条领用流水。itemName / studentName / studentPhone 由 JOIN 得到，
+ * 即使对应物件已软删也照常带出（历史可查）。
+ */
+export interface Allocation {
+  id: number;
+  itemId: number;
+  itemName: string;
+  studentId: number;
+  studentName: string;
+  studentPhone: string;
+  quantity: number;
+  /** 领取日期 'YYYY-MM-DD' */
+  claimedAt: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** 提交一次领用的入参。 */
+export interface AllocationInput {
+  itemId: number;
+  studentId: number;
+  /** 整数 ≥ 1 */
+  quantity: number;
+  /** 省略 → 今天（YYYY-MM-DD） */
+  claimedAt?: string;
+  note?: string | null;
+}
+
+/** 领用流水查询条件。claimed_at 是 YYYY-MM-DD 字符串，直接字符串比较即时间序。 */
+export interface AllocationListQuery {
+  /** claimed_at >= dateFrom */
+  dateFrom?: string;
+  /** claimed_at <= dateTo */
+  dateTo?: string;
+  studentId?: number;
+  itemId?: number;
+  /** 默认 100 */
+  limit?: number;
+  /** 默认 0 */
+  offset?: number;
+}
+
+export interface AllocationListResult {
+  rows: Allocation[];
+  total: number;
+}
+
+/** 物件台账导入结果报告。 */
+export interface InventoryImportReport {
+  /** 新建的物件数 */
+  created: number;
+  /** 按物件名匹配到、累加了库存的物件数 */
+  updated: number;
+  /** 校验失败被跳过的行数 */
+  failed: number;
+  /** row = xlsx 行号（含表头，从 2 起） */
+  failures: { row: number; reason: string }[];
+}

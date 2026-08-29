@@ -33,6 +33,21 @@ export const CH = {
   ioDownloadTemplate: 'io:downloadTemplate',
   ioPickImportFile: 'io:pickImportFile',
   ioImportStudents: 'io:importStudents',
+
+  // 库存管理
+  inventoryListItems: 'inventory:listItems',
+  inventoryGetItem: 'inventory:getItem',
+  inventoryCreateItem: 'inventory:createItem',
+  inventoryUpdateItem: 'inventory:updateItem',
+  inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryAllocate: 'inventory:allocate',
+  inventoryListAllocations: 'inventory:listAllocations',
+  inventoryDeleteAllocation: 'inventory:deleteAllocation',
+  inventoryExportItems: 'inventory:exportItems',
+  inventoryExportAllocations: 'inventory:exportAllocations',
+  inventoryDownloadTemplate: 'inventory:downloadTemplate',
+  inventoryPickImportFile: 'inventory:pickImportFile',
+  inventoryImportItems: 'inventory:importItems',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

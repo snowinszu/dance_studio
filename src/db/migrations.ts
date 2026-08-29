@@ -116,10 +116,73 @@ const v2 = (db: Database): void => {
   `);
 };
 
-/** 全部迁移，按 version 升序。新增结构变更时往末尾追加。 */
+/**
+ * v4：库存管理模块的初始表结构。
+ *
+ * 版本号说明：本迁移原为 v3，但并行开发的「学员班级字段」分支（feat/class-name-field）
+ * 也占用了 v3（ALTER TABLE students ADD COLUMN class_name）。两个 v3 语义不同，谁先
+ * 在某台机器上跑过，user_version 就先到 3，另一个便被 run() 静默跳过。为消除冲突，
+ * 库存迁移改用 v4——对已在 v3 的库（跑过班级分支）会补建下面这两张表；对停在 v2 的库
+ * 会直接从 v2 跳到 v4（run() 只看 version > current，允许版本号有空档）。
+ * DDL 一律 IF NOT EXISTS：即使因历史原因重复触发也不炸。
+ *
+ * 合并顺序建议：feat/class-name-field（v3）应先并入 main，再并本分支（v4）。
+ *
+ * 两本「账」：
+ * - inventory_items：物件台账。quantity 是「当前在库数」的权威值，
+ *   列表 / 详情 / 分配下拉 / 低库存预警都直接读它，不靠汇总流水实时算。
+ * - item_allocations：领用流水，一行 = 某学员某天领走某物件几件。
+ *
+ * 两张表都不写 ON DELETE CASCADE：物件用软删除（deleted_at），学员本就是软删除，
+ * 删了也要能在流水 / 导出里查到历史。连接级 PRAGMA foreign_keys=ON（见 connection.ts）
+ * 下，这里的外键只保证「插入时 item_id / student_id 必须存在」。
+ */
+const v4 = (db: Database): void => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      name                 TEXT    NOT NULL,
+      category             TEXT,
+      unit                 TEXT    NOT NULL DEFAULT '件',
+      -- 当前在库数。不设 CHECK(quantity >= 0)：不为负由 allocate 的守卫 UPDATE 保证，
+      -- 加 CHECK 会让「删除领用记录回补库存」等场景更脆。
+      quantity             INTEGER NOT NULL DEFAULT 0,
+      -- 低于等于此值时，列表标「库存偏低」；0 表示「没货了才算偏低」
+      low_stock_threshold  INTEGER NOT NULL DEFAULT 0,
+      note                 TEXT,
+      created_at           TEXT    NOT NULL,
+      updated_at           TEXT    NOT NULL,
+      deleted_at           TEXT               -- 非空即已软删除
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_items_name     ON inventory_items(name);
+    CREATE INDEX IF NOT EXISTS idx_items_category ON inventory_items(category);
+    CREATE INDEX IF NOT EXISTS idx_items_deleted  ON inventory_items(deleted_at);
+
+    CREATE TABLE IF NOT EXISTS item_allocations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id     INTEGER NOT NULL REFERENCES inventory_items(id),
+      student_id  INTEGER NOT NULL REFERENCES students(id),
+      quantity    INTEGER NOT NULL DEFAULT 1,
+      claimed_at  TEXT    NOT NULL,          -- 领取日期 'YYYY-MM-DD'，字典序即时间序
+      note        TEXT,
+      created_at  TEXT    NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_alloc_item    ON item_allocations(item_id);
+    CREATE INDEX IF NOT EXISTS idx_alloc_student ON item_allocations(student_id);
+    CREATE INDEX IF NOT EXISTS idx_alloc_date    ON item_allocations(claimed_at);
+  `);
+};
+
+/**
+ * 全部迁移，按 version 升序。新增结构变更时往末尾追加。
+ * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4，见 v4 注释）。
+ */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
   { version: 2, up: v2 },
+  { version: 4, up: v4 },
 ];
 
 /** 当前代码期望的最高版本号。 */
@@ -136,6 +199,16 @@ export const LATEST_VERSION = MIGRATIONS.reduce((max, m) => Math.max(max, m.vers
  * @param migrations 默认用内置 MIGRATIONS；单元测试可传入自定义列表来验证回滚等行为
  */
 export function run(db: Database, migrations: readonly Migration[] = MIGRATIONS): void {
+  // 版本号重复会让「后一个」被 user_version 静默跳过（正是库存 v3→v4 事故的成因）。
+  // 这里在启动时就把重复版本号炸出来，逼开发期解决，而不是等用户点开某个模块才报错。
+  const seen = new Set<number>();
+  for (const m of migrations) {
+    if (seen.has(m.version)) {
+      throw new Error(`迁移版本号重复：v${m.version}（版本号必须唯一）`);
+    }
+    seen.add(m.version);
+  }
+
   const current = db.pragma('user_version', { simple: true }) as number;
 
   for (const migration of [...migrations].sort((a, b) => a.version - b.version)) {

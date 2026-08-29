@@ -35,6 +35,19 @@ const CH = {
   ioDownloadTemplate: 'io:downloadTemplate',
   ioPickImportFile: 'io:pickImportFile',
   ioImportStudents: 'io:importStudents',
+  inventoryListItems: 'inventory:listItems',
+  inventoryGetItem: 'inventory:getItem',
+  inventoryCreateItem: 'inventory:createItem',
+  inventoryUpdateItem: 'inventory:updateItem',
+  inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryAllocate: 'inventory:allocate',
+  inventoryListAllocations: 'inventory:listAllocations',
+  inventoryDeleteAllocation: 'inventory:deleteAllocation',
+  inventoryExportItems: 'inventory:exportItems',
+  inventoryExportAllocations: 'inventory:exportAllocations',
+  inventoryDownloadTemplate: 'inventory:downloadTemplate',
+  inventoryPickImportFile: 'inventory:pickImportFile',
+  inventoryImportItems: 'inventory:importItems',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -78,6 +91,22 @@ const api = {
     downloadTemplate: () => invoke(CH.ioDownloadTemplate),
     pickImportFile: () => invoke(CH.ioPickImportFile),
     importStudents: (args: unknown) => invoke(CH.ioImportStudents, args),
+  },
+
+  inventory: {
+    listItems: (query?: unknown) => invoke(CH.inventoryListItems, query),
+    getItem: (id: number) => invoke(CH.inventoryGetItem, id),
+    createItem: (input: unknown) => invoke(CH.inventoryCreateItem, input),
+    updateItem: (id: number, input: unknown) => invoke(CH.inventoryUpdateItem, id, input),
+    deleteItem: (id: number) => invoke(CH.inventoryDeleteItem, id),
+    allocate: (input: unknown) => invoke(CH.inventoryAllocate, input),
+    allocations: (query?: unknown) => invoke(CH.inventoryListAllocations, query),
+    deleteAllocation: (id: number) => invoke(CH.inventoryDeleteAllocation, id),
+    exportItems: (query?: unknown) => invoke(CH.inventoryExportItems, query),
+    exportAllocations: (query?: unknown) => invoke(CH.inventoryExportAllocations, query),
+    downloadTemplate: () => invoke(CH.inventoryDownloadTemplate),
+    pickImportFile: () => invoke(CH.inventoryPickImportFile),
+    importItems: (args: unknown) => invoke(CH.inventoryImportItems, args),
   },
 };
 
