@@ -11,9 +11,9 @@ import type { FieldDescriptor, StudentInput } from '../../src/shared/types';
 
 const baseSchema = buildSchema();
 
-/** 只填必填项的合法输入。 */
+/** 只填必填项的合法输入。剩余课时是必填，给 0 满足（0 不算空）。 */
 function minimalInput(over: Partial<StudentInput> = {}): StudentInput {
-  return { name: '张三', phonePrimary: '13800138000', ...over };
+  return { name: '张三', phonePrimary: '13800138000', remainingLessons: 0, ...over };
 }
 
 test('合法的最小输入：无错误，状态缺省为「在读」', () => {
@@ -24,19 +24,38 @@ test('合法的最小输入：无错误，状态缺省为「在读」', () => {
   assert.equal(values['status'], '在读');
 });
 
-test('缺姓名 / 缺主电话 → 各自报必填', () => {
-  const r1 = validateStudent({ name: '', phonePrimary: '13800138000' }, baseSchema);
+test('缺姓名 / 缺主电话 / 缺剩余课时 → 各自报必填', () => {
+  const r1 = validateStudent({ name: '', phonePrimary: '13800138000', remainingLessons: 0 }, baseSchema);
   assert.equal(r1.errors['name'], '此项为必填');
 
-  const r2 = validateStudent({ name: '李四', phonePrimary: '' }, baseSchema);
+  const r2 = validateStudent({ name: '李四', phonePrimary: '', remainingLessons: 0 }, baseSchema);
   assert.equal(r2.errors['phone_primary'], '此项为必填');
+
+  // 剩余课时现在是必填：省略即报错（0 能通过，见 minimalInput）
+  const r3 = validateStudent({ name: '王五', phonePrimary: '13800138000' }, baseSchema);
+  assert.equal(r3.errors['remaining_lessons'], '此项为必填');
 });
 
-test('手机号格式：非法报错、合法通过', () => {
-  assert.ok(validateStudent(minimalInput({ phonePrimary: '123' }), baseSchema).errors['phone_primary']);
-  assert.ok(validateStudent(minimalInput({ phonePrimary: '02912345678' }), baseSchema).errors['phone_primary']);
+test('主 / 备用电话不再校验手机号格式（可填座机）', () => {
+  // 座机、带区号、带分隔符都放行
+  for (const v of ['010-88886666', '021 1234 5678', '0755-12345678']) {
+    const r = validateStudent(minimalInput({ phonePrimary: v, phoneSecondary: v }), baseSchema);
+    assert.equal(r.errors['phone_primary'], undefined, `主电话应放行：${v}`);
+    assert.equal(r.errors['phone_secondary'], undefined, `备用电话应放行：${v}`);
+    assert.equal(r.values['phonePrimary'], v);
+  }
+});
+
+test('紧急联系电话仍校验手机号格式', () => {
+  assert.ok(
+    validateStudent(minimalInput({ emergencyContactPhone: '123' }), baseSchema).errors[
+      'emergency_contact_phone'
+    ],
+  );
   assert.equal(
-    validateStudent(minimalInput({ phonePrimary: '13912345678' }), baseSchema).errors['phone_primary'],
+    validateStudent(minimalInput({ emergencyContactPhone: '13912345678' }), baseSchema).errors[
+      'emergency_contact_phone'
+    ],
     undefined,
   );
 });

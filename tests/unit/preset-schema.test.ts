@@ -69,6 +69,18 @@ test('status 字段的 options 与 STUDENT_STATUSES 一致，默认值取第一�
   assert.equal(DEFAULT_STUDENT_STATUS, STUDENT_STATUSES[0]);
 });
 
+test('必填的预设字段：name / phone_primary / remaining_lessons / status', () => {
+  const required = PRESET_FIELDS.filter((f) => f.required).map((f) => f.key).sort();
+  assert.deepEqual(required, ['name', 'phone_primary', 'remaining_lessons', 'status'].sort());
+});
+
+test('主 / 备用电话是 text 类型（不校验手机号）；紧急联系电话仍是 phone', () => {
+  const typeOf = (key: string) => PRESET_FIELDS.find((f) => f.key === key)?.type;
+  assert.equal(typeOf('phone_primary'), 'text');
+  assert.equal(typeOf('phone_secondary'), 'text');
+  assert.equal(typeOf('emergency_contact_phone'), 'phone');
+});
+
 test('GROUPS 的 order 从 1 起、连续且升序', () => {
   const orders = GROUPS.map((g) => g.order);
   assert.deepEqual(

@@ -558,6 +558,11 @@ async function renderDetail(id) {
         type: 'button',
         onclick: () => void confirmDelete(student),
       }, '删除'),
+      el('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        onclick: () => { location.hash = '#/list'; },
+      }, '返回列表'),
     ),
   );
 
