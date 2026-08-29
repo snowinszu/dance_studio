@@ -43,6 +43,16 @@ test('已移除的证件字段：预设里没有、迁移后 students 表也没�
   }
 });
 
+test('新增的「班级」字段：预设里有、迁移后 students 表有对应列，归属课程与会员组', () => {
+  const cols = studentColumns();
+  assert.ok(PRESET_COLUMN_NAMES.includes('class_name'));
+  assert.ok(cols.has('class_name'));
+  const f = PRESET_FIELDS.find((x) => x.key === 'class_name');
+  assert.ok(f);
+  assert.equal(f.group, 'course');
+  assert.equal(f.type, 'text');
+});
+
 test('预设字段 key 无重复', () => {
   assert.equal(new Set(PRESET_COLUMN_NAMES).size, PRESET_COLUMN_NAMES.length);
 });

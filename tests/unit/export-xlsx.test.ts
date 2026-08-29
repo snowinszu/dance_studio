@@ -78,7 +78,7 @@ test('写出文件 → 读回校验单元格格式化，且不含已软删除的
     assert.ok(jiaRow > 1, '找到甲的行');
     const cell = (name: string) => String(ws.getRow(jiaRow).getCell(col(name)).value ?? '');
 
-    assert.equal(cell('报读舞种 / 班级'), '中国舞, 芭蕾', 'multiselect 逗号分隔');
+    assert.equal(cell('报读舞种'), '中国舞, 芭蕾', 'multiselect 逗号分隔');
     assert.equal(cell('出生日期'), '2015-03-04', 'date 原样 YYYY-MM-DD');
     assert.equal(cell('身高'), '130', '未归档自定义字段值');
     assert.equal(cell('旧机构(已归档)'), '育才', '已归档字段历史值仍导出');

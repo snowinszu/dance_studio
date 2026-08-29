@@ -127,6 +127,7 @@ export interface Student {
 
   // —— 课程与会员 ——
   danceTypes: string[];
+  className: string | null;
   currentLevel: string | null;
   enrollDate: string | null;
   mainTeacher: string | null;
@@ -182,6 +183,7 @@ export interface StudentInput {
   emergencyContactName?: string | null;
   emergencyContactPhone?: string | null;
   danceTypes?: string[];
+  className?: string | null;
   currentLevel?: string | null;
   enrollDate?: string | null;
   mainTeacher?: string | null;
