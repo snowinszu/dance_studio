@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- 默认标题即回退值：无有效 app 参数时页面标题保持「敬请期待」 -->
+  <title>敬请期待 · 晓·乐舞艺术空间</title>
+  <!-- 设计令牌 stylesheet — Createthisprojecta design system tokens -->
+  <link rel="stylesheet" href="colors_and_type.css">
+  <style>
+    /* ─── 令牌兜底（与首页 index.html 同一份，保证两页视觉完全一致）──── */
+    :root {
+      --bg:      oklch(99.5% 0.003 15);
+      --surface: oklch(100% 0 0);
+      --fg:      oklch(14% 0.010 0);
+      --muted:   oklch(55% 0.008 0);
+      --border:  oklch(93% 0.004 0);
+      --accent:  oklch(57% 0.235 17);
+      --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+
+      --radius:      12px;
+      --radius-lg:   18px;
+      --radius-pill: 999px;
+      --radius-mark: 8px;
+      --radius-icon: 14px;
+    }
+
+    /* ─── 重置 ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100vh; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ─── 顶部导航（复用首页 index.html 的 .topnav 规范）────────────────
+       整页仅此一处使用 --accent（品牌方块），符合「每屏至多 2 次」。      */
+    .topnav {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      backdrop-filter: blur(20px) saturate(1.6);
+      -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      border-bottom: 1px solid var(--border);
+    }
+    .topnav-inner {
+      max-width: 1120px; margin-inline: auto;
+      padding: 0 40px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 9px; }
+    .xhs-mark {
+      width: 28px; height: 28px;
+      background: var(--accent); border-radius: var(--radius-mark);
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    .xhs-mark svg { width: 15px; height: 15px; color: var(--surface); }
+    .nav-title {
+      font-family: var(--font-display); font-size: 15px;
+      font-weight: 700; letter-spacing: 0.01em;
+    }
+    /* 「返回首页」入口：中性色，hover 加深（对比度上升，不下降） */
+    .nav-back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      padding: 6px 4px; border-radius: var(--radius);
+      transition: color 0.15s;
+    }
+    .nav-back:hover { color: var(--fg); }
+    .nav-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav-back svg { width: 15px; height: 15px; }
+
+    /* ─── 主体：垂直居中的占位说明 ──────────────────────────────────── */
+    main {
+      flex: 1;
+      display: grid; place-items: center;
+      padding: 48px 24px 72px;
+      text-align: center;
+    }
+    .ph { max-width: 420px; }
+    .ph-glyph {
+      width: 72px; height: 72px; margin: 0 auto 28px;
+      border-radius: var(--radius-icon);
+      background: var(--surface); border: 1px solid var(--border);
+      display: grid; place-items: center;
+      box-shadow: 0 2px 10px color-mix(in oklch, var(--fg) 5%, transparent);
+    }
+    .ph-glyph svg { width: 30px; height: 30px; color: var(--muted); }
+
+    .ph-title {
+      font-family: var(--font-display);
+      font-size: clamp(26px, 4vw, 34px);
+      font-weight: 800; letter-spacing: -0.02em; line-height: 1.15;
+      color: var(--fg); margin: 0;
+    }
+    /* 「敬请期待」独立一行；app 参数有效（标题变成应用名）时才显示，避免与标题重复 */
+    .ph-standby {
+      font-size: 15px; font-weight: 600; letter-spacing: 0.02em;
+      color: var(--muted); margin: 10px 0 0;
+    }
+    .ph-note {
+      font-size: 14px; color: var(--muted);
+      margin: 12px 0 0;
+    }
+
+    @media (max-width: 920px) {
+      .topnav-inner { padding-inline: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶栏：左品牌标识 + 右「返回首页」 -->
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="nav-brand" href="index.html" aria-label="晓·乐舞艺术空间 首页">
+        <span class="xhs-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.5l2.4 6.7 6.9.3-5.4 4.3 1.9 6.7L12 17l-5.7 3.8 1.9-6.7L2.8 9.8l6.9-.3z"/>
+          </svg>
+        </span>
+        <span class="nav-title">晓·乐舞艺术空间</span>
+      </a>
+
+      <a class="nav-back" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+        返回首页
+      </a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="ph">
+      <div class="ph-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <polyline points="12 7 12 12 15.5 14"></polyline>
+        </svg>
+      </div>
+
+      <!-- 大标题默认即回退值「敬请期待」；有有效 app 参数时替换为应用名 -->
+      <h1 class="ph-title" id="ph-title">敬请期待</h1>
+
+      <!-- 标题变成应用名后，这一行补上「敬请期待」；回退态隐藏（否则与标题重复） -->
+      <p class="ph-standby" id="ph-standby" hidden>敬请期待</p>
+
+      <p class="ph-note" id="ph-note">该功能正在开发中，敬请期待</p>
+    </div>
+  </main>
+
+  <script>
+    // 五个在建应用的 key → 中文名。key 与首页卡片 href 里的 ?app= 一致。
+    var APP_NAMES = {
+      students:   '学员档案',
+      schedule:   '课程安排',
+      attendance: '考勤管理',
+      inventory:  '库存管理',
+      reports:    '数据报表'
+    };
+
+    (function initPlaceholder() {
+      var key = new URLSearchParams(window.location.search).get('app');
+      // 只认白名单里的 key，其余（含 null / 拼写错误）一律走回退分支
+      var name = Object.prototype.hasOwnProperty.call(APP_NAMES, key) ? APP_NAMES[key] : null;
+
+      var titleEl = document.getElementById('ph-title');
+      var standbyEl = document.getElementById('ph-standby');
+      var noteEl = document.getElementById('ph-note');
+
+      if (name) {
+        // 有效 app：应用名作大标题，「敬请期待」补一行独立展示
+        if (titleEl) titleEl.textContent = name;
+        if (standbyEl) standbyEl.hidden = false;
+        if (noteEl) noteEl.textContent = name + '功能正在开发中，敬请期待';
+        document.title = name + ' · 敬请期待 · 晓·乐舞艺术空间';
+      }
+      // 无有效 app：什么都不改 —— 标题保持「敬请期待」，<title> 保持默认回退值
+    })();
+  </script>
+
+</body>
+</html>
