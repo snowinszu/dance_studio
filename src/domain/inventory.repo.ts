@@ -17,7 +17,7 @@ import type {
   InventoryListQuery,
   InventoryListResult,
 } from '../shared/types';
-import type { ItemValues } from './inventory.validation';
+import type { AllocationValues, ItemValues } from './inventory.validation';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -208,6 +208,63 @@ export function softDeleteItem(id: number): { id: number } {
     id,
   });
   return { id };
+}
+
+/* ───────────────────────── 领用（分配扣减） ───────────────────────── */
+
+/**
+ * 分配一件物件给学员：一个事务里「扣库存 + 记流水」，要么都成、要么都不动。
+ *
+ * 守卫更新 `... WHERE id=@itemId AND deleted_at IS NULL AND quantity >= @qty`：
+ * - 从 SQL 层面保证库存**不为负**
+ * - 防「渲染层拿了旧数据」「导入连领同一物件」等竞态
+ * `changes !== 1` 即没扣成（物件不存在 / 已软删 / 库存不够）→ 抛 INSUFFICIENT_STOCK，事务回滚。
+ *
+ * @returns 新流水 id + 扣减后的剩余库存
+ */
+export function allocate(values: AllocationValues): { id: number; remaining: number } {
+  const db = getDb();
+  const now = nowIso();
+
+  const tx = db.transaction((): number => {
+    const upd = db
+      .prepare(
+        `UPDATE inventory_items
+            SET quantity = quantity - @qty, updated_at = @now
+          WHERE id = @itemId AND deleted_at IS NULL AND quantity >= @qty`,
+      )
+      .run({ itemId: values.itemId, qty: values.quantity, now });
+
+    if (upd.changes !== 1) {
+      throw new AppError('INSUFFICIENT_STOCK', '库存不足，或物件不存在', {
+        quantity: '库存不足',
+      });
+    }
+
+    const ins = db
+      .prepare(
+        `INSERT INTO item_allocations
+           (item_id, student_id, quantity, claimed_at, note, created_at)
+         VALUES (@itemId, @studentId, @qty, @claimedAt, @note, @now)`,
+      )
+      .run({
+        itemId: values.itemId,
+        studentId: values.studentId,
+        qty: values.quantity,
+        claimedAt: values.claimedAt,
+        note: values.note,
+        now,
+      });
+    return Number(ins.lastInsertRowid);
+  });
+
+  const id = tx();
+  const remaining = (
+    db.prepare(`SELECT quantity AS n FROM inventory_items WHERE id = ?`).get(values.itemId) as {
+      n: number;
+    }
+  ).n;
+  return { id, remaining };
 }
 
 /* ───────────────────────── 领用流水（读） ───────────────────────── */

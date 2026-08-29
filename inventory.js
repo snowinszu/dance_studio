@@ -393,6 +393,7 @@ async function renderItemDetail(id) {
       el('p', { class: 'page-sub', text: deleted ? '此物件已删除（仅历史可见）' : `当前库存 ${item.quantity} ${item.unit}` }),
     ),
     el('div', { class: 'detail-actions' },
+      !deleted && item.quantity > 0 && el('button', { class: 'btn btn-primary', type: 'button', onclick: () => { location.hash = `#/allocate/${id}`; } }, '分配'),
       !deleted && el('button', { class: 'btn', type: 'button', onclick: () => { location.hash = `#/items/${id}/edit`; } }, '编辑'),
       !deleted && el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => void confirmDeleteItem(item) }, '删除'),
       el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
@@ -452,8 +453,144 @@ async function confirmDeleteItem(item) {
   }
 }
 
+/* ───────────────────────── 分配物件给学员 ───────────────────────── */
+
+/** 本地今天，YYYY-MM-DD（date input 的 value 格式）。 */
+function todayInput() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+async function renderAllocateForm(preItemId) {
+  view.replaceChildren(el('div', { text: '载入…' }));
+
+  let items = [];
+  let students = [];
+  try {
+    [items, students] = await Promise.all([
+      shell.inventory.listItems({ limit: 1000 }).then((r) => unwrap(r).rows),
+      shell.students.list({ limit: 2000 }).then((r) => unwrap(r).rows),
+    ]);
+  } catch (e) {
+    view.replaceChildren(
+      el('div', { class: 'empty' }, el('strong', { text: '加载失败' }), el('span', { text: e.message })),
+    );
+    return;
+  }
+
+  const sellable = items.filter((it) => it.deletedAt == null && it.quantity > 0);
+
+  const head = el('div', { class: 'page-head' },
+    el('div', {},
+      el('h1', { class: 'page-title', text: '分配物件' }),
+      el('p', { class: 'page-sub', text: '给学员发放物件，库存自动扣减' }),
+    ),
+    el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
+  );
+
+  if (sellable.length === 0 || students.length === 0) {
+    view.replaceChildren(head,
+      el('div', { class: 'empty' },
+        el('strong', { text: sellable.length === 0 ? '没有可分配的物件' : '还没有学员' }),
+        el('span', {
+          text: sellable.length === 0
+            ? '所有物件库存都为 0，请先补货或新建物件。'
+            : '请先到「学员档案」录入学员。',
+        }),
+      ),
+    );
+    return;
+  }
+
+  const itemSel = el('select', { id: 'f-itemId', name: 'itemId' },
+    el('option', { value: '' }, '请选择物件'),
+    ...sellable.map((it) =>
+      el('option', {
+        value: String(it.id),
+        selected: preItemId && Number(preItemId) === it.id ? 'selected' : null,
+      }, `${it.name}（剩 ${it.quantity} ${it.unit}）`),
+    ),
+  );
+  const studentSel = el('select', { id: 'f-studentId', name: 'studentId' },
+    el('option', { value: '' }, '请选择学员'),
+    ...students.map((s) =>
+      el('option', { value: String(s.id) }, `${s.name}${s.phonePrimary ? ' · ' + s.phonePrimary : ''}`),
+    ),
+  );
+  const qtyInp = el('input', { id: 'f-quantity', name: 'quantity', type: 'number', min: '1', step: '1', value: '1', inputmode: 'numeric' });
+  const dateInp = el('input', { id: 'f-claimedAt', name: 'claimedAt', type: 'date', value: todayInput() });
+  const noteInp = el('textarea', { id: 'f-note', name: 'note', rows: 2 });
+
+  const field = (key, label, control, hint) =>
+    el('div', { class: 'field', dataset: { key } },
+      el('label', { for: `f-${key}` }, label),
+      control,
+      hint ? el('div', { class: 'field-hint', text: hint }) : null,
+      el('div', { class: 'field-error' }),
+    );
+
+  const form = el('form', { id: 'allocate-form', novalidate: 'novalidate' },
+    el('fieldset', { class: 'form-group' },
+      el('legend', { text: '领用登记' }),
+      field('itemId', '物件', itemSel),
+      field('studentId', '学员', studentSel),
+      field('quantity', '领取数量', qtyInp),
+      field('claimedAt', '领取日期', dateInp),
+      field('note', '备注', noteInp),
+    ),
+    el('div', { class: 'form-actions' },
+      el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '取消'),
+      el('button', { class: 'btn btn-primary', type: 'submit' }, '确认分配'),
+    ),
+  );
+
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    void submitAllocate(form);
+  });
+
+  view.replaceChildren(head, form);
+}
+
+async function submitAllocate(form) {
+  clearItemErrors(form);
+  const g = (k) => (form.elements[k] && form.elements[k].value != null ? form.elements[k].value : '').trim();
+  const input = {
+    itemId: g('itemId') === '' ? undefined : Number(g('itemId')),
+    studentId: g('studentId') === '' ? undefined : Number(g('studentId')),
+    quantity: g('quantity') === '' ? undefined : Number(g('quantity')),
+    claimedAt: g('claimedAt'),
+    note: g('note'),
+  };
+
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    const { itemId } = input;
+    const { remaining } = unwrap(await shell.inventory.allocate(input));
+    toast(`已分配，该物件剩 ${remaining}`);
+    location.hash = `#/items/${itemId}`;
+  } catch (e) {
+    if ((e.code === 'VALIDATION_FAILED' || e.code === 'INSUFFICIENT_STOCK') && e.fields) {
+      showItemErrors(form, e.fields);
+      toast(e.code === 'INSUFFICIENT_STOCK' ? '库存不足' : '请检查表单填写');
+    } else if (e.code === 'INSUFFICIENT_STOCK') {
+      showItemErrors(form, { quantity: '库存不足' });
+      toast('库存不足');
+    } else if (e.code === 'NOT_FOUND') {
+      toast('物件不存在，可能已被删除');
+      location.hash = '#/items';
+    } else {
+      toast(`分配失败：${e.message}`);
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ───────────────────────── 尚未接入的视图（占位） ─────────────────────────
-   #/allocate（#28）、#/allocations（#29）在后续 issue 里实现。 */
+   #/allocations（#29）在后续 issue 里实现。 */
 
 function renderStub(title) {
   view.replaceChildren(
@@ -482,7 +619,7 @@ function parseRoute() {
 async function route() {
   const { head, id, sub } = parseRoute();
   try {
-    if (head === 'allocate') return renderStub('分配物件');
+    if (head === 'allocate') return await renderAllocateForm(id);
     if (head === 'allocations') return renderStub('领用流水');
     if (head === 'items' && id === 'new') return await renderItemForm({ mode: 'new' });
     if (head === 'items' && id && sub === 'edit') {

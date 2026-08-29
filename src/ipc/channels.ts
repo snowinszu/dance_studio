@@ -40,6 +40,7 @@ export const CH = {
   inventoryCreateItem: 'inventory:createItem',
   inventoryUpdateItem: 'inventory:updateItem',
   inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryAllocate: 'inventory:allocate',
   inventoryListAllocations: 'inventory:listAllocations',
 } as const;
 

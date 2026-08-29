@@ -40,6 +40,7 @@ const CH = {
   inventoryCreateItem: 'inventory:createItem',
   inventoryUpdateItem: 'inventory:updateItem',
   inventoryDeleteItem: 'inventory:deleteItem',
+  inventoryAllocate: 'inventory:allocate',
   inventoryListAllocations: 'inventory:listAllocations',
 } as const;
 
@@ -92,6 +93,7 @@ const api = {
     createItem: (input: unknown) => invoke(CH.inventoryCreateItem, input),
     updateItem: (id: number, input: unknown) => invoke(CH.inventoryUpdateItem, id, input),
     deleteItem: (id: number) => invoke(CH.inventoryDeleteItem, id),
+    allocate: (input: unknown) => invoke(CH.inventoryAllocate, input),
     allocations: (query?: unknown) => invoke(CH.inventoryListAllocations, query),
   },
 };

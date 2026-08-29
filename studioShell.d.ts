@@ -5,6 +5,7 @@
  * 不进任何 tsconfig 的 include。真实实现见 src/preload.ts，契约类型见 src/shared/types.ts。
  */
 import type {
+  AllocationInput,
   AllocationListQuery,
   AllocationListResult,
   CustomFieldDef,
@@ -76,6 +77,9 @@ declare global {
       createItem(input: InventoryItemInput): Promise<IpcResult<{ id: number }>>;
       updateItem(id: number, input: InventoryItemInput): Promise<IpcResult<{ id: number }>>;
       deleteItem(id: number): Promise<IpcResult<{ id: number }>>;
+      allocate(
+        input: AllocationInput,
+      ): Promise<IpcResult<{ id: number; remaining: number }>>;
       allocations(query?: AllocationListQuery): Promise<IpcResult<AllocationListResult>>;
     };
   }

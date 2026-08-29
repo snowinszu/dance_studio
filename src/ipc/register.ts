@@ -7,6 +7,7 @@
  */
 import { dialog, ipcMain } from 'electron';
 import type {
+  AllocationInput,
   AllocationListQuery,
   CustomFieldInput,
   CustomFieldPatch,
@@ -16,7 +17,7 @@ import type {
   ListQuery,
   StudentInput,
 } from '../shared/types';
-import { validateItem } from '../domain/inventory.validation';
+import { validateAllocation, validateItem } from '../domain/inventory.validation';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
 import * as studentsRepo from '../domain/students.repo';
@@ -212,6 +213,19 @@ export function registerIpc(): void {
   });
 
   handle(CH.inventoryDeleteItem, (id?: number) => inventoryRepo.softDeleteItem(Number(id)));
+
+  handle(CH.inventoryAllocate, (input?: AllocationInput) => {
+    const p = input ?? ({} as AllocationInput);
+    const item = inventoryRepo.getItem(Number(p.itemId));
+    if (!item || item.deletedAt != null) {
+      throw new AppError('NOT_FOUND', '物件不存在，可能已被删除');
+    }
+    const { values, errors } = validateAllocation(p, item);
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return inventoryRepo.allocate(values);
+  });
 
   handle(CH.inventoryListAllocations, (query?: AllocationListQuery) =>
     inventoryRepo.listAllocations(query ?? {}),
