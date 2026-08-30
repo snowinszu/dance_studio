@@ -985,3 +985,26 @@ export interface ReportAttendanceStats {
   /** 星期(0=周日..6) × 2 小时时段桶(0..11) 的出勤人次；attend_time 为空 → bucket=-1 */
   hourHeatmap: { weekday: number; bucket: number; count: number }[];
 }
+
+/** 课程指标区。 */
+export interface ReportCourseStats {
+  /** 区间内正常课节，按老师分组的课节数与总时长（分钟）；teacher_id 为空 → 「未指定」；按时长降序 */
+  teacherLoad: {
+    teacherId: number | null;
+    teacherName: string;
+    sessionCount: number;
+    minutes: number;
+  }[];
+  /** 区间内未软删课节的停课占比；rate 分母（正常+停课）为 0 时为 null */
+  cancelRate: { normal: number; cancelled: number; rate: number | null };
+  /** 每个未结课班级的「在册人数 ÷ capacity」；capacity 缺失或 <=0 → rate 为 null */
+  classFillRate: {
+    classId: number;
+    className: string;
+    enrolled: number;
+    capacity: number | null;
+    rate: number | null;
+  }[];
+  /** 区间内、已发生、正常、关联出勤/补课人次为 0 的课节 */
+  emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
+}

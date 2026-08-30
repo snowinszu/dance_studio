@@ -461,6 +461,80 @@ function renderAttendance(stats) {
   );
 }
 
+/* ───────────────────────── 课程指标区 ───────────────────────── */
+
+/** 分钟 → 「N 小时」，半小时保留一位小数。 */
+function fmtHours(minutes) {
+  const h = (Number(minutes) || 0) / 60;
+  return (Number.isInteger(h) ? h : h.toFixed(1)) + ' 小时';
+}
+
+/** 班级满员率列表：capacity 缺失显示「未设容量」、不画条。 */
+function renderFillRate(rows) {
+  if (!rows.length) return el('div', { class: 'sec-empty' }, '暂无数据');
+  return el(
+    'div',
+    { class: 'dist-list' },
+    ...rows.map((r) => {
+      const pct = r.rate == null ? null : Math.round(r.rate * 100);
+      return el(
+        'div',
+        { class: 'dist-row' },
+        el('span', { class: 'd-label', title: r.className }, r.className),
+        el(
+          'div',
+          { class: 'd-track' },
+          pct == null ? null : el('div', { class: 'd-fill', style: `width:${Math.min(100, pct)}%` }),
+        ),
+        el(
+          'span',
+          { class: 'd-value' },
+          r.capacity == null
+            ? `${r.enrolled} · 未设容量`
+            : `${r.enrolled}/${r.capacity}${pct == null ? '' : ` · ${pct}%`}`,
+        ),
+      );
+    }),
+  );
+}
+
+function renderCourse(stats) {
+  const cr = stats.cancelRate;
+  return section(
+    '课程指标',
+    true,
+
+    subHead('老师课时负荷'),
+    twoColTable(
+      '老师',
+      '课节 / 课时',
+      stats.teacherLoad.map((t) => [t.teacherName, `${t.sessionCount} 节 · ${fmtHours(t.minutes)}`]),
+    ),
+
+    subHead('停课率'),
+    el(
+      'div',
+      { class: 'stat-pair' },
+      el(
+        'div',
+        { class: 'stat' },
+        el('b', {}, cr.rate == null ? '—' : `${Math.round(cr.rate * 100)}%`),
+        el('span', {}, `停课 ${cr.cancelled} / 共 ${cr.normal + cr.cancelled} 节`),
+      ),
+    ),
+
+    subHead('班级满员率'),
+    renderFillRate(stats.classFillRate),
+
+    subHead('空课（区间内 0 到课）'),
+    twoColTable(
+      '课节',
+      '日期',
+      stats.emptySessions.map((s) => [s.className, `${s.sessionDate} ${s.startTime}`]),
+    ),
+  );
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -531,6 +605,14 @@ async function load(body) {
     sections.push(renderAttendance(att));
   } catch (e) {
     sections.push(sectionError('考勤指标', e));
+  }
+
+  // 课程指标区
+  try {
+    const course = unwrap(await shell.reports.courseStats(range));
+    sections.push(renderCourse(course));
+  } catch (e) {
+    sections.push(sectionError('课程指标', e));
   }
 
   body.replaceChildren(...sections);

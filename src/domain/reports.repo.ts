@@ -15,6 +15,7 @@ import { getDb } from '../db/connection';
 import type {
   ReportAlerts,
   ReportAttendanceStats,
+  ReportCourseStats,
   ReportOverview,
   ReportRange,
 } from '../shared/types';
@@ -381,4 +382,92 @@ export function getAttendanceStats(range: ReportRange): ReportAttendanceStats {
     byDanceType,
     hourHeatmap,
   };
+}
+
+/* ───────────────────────── 课程指标 ───────────────────────── */
+
+/** SQL 片段：把某列的 'HH:MM' 文本换算成当天分钟数（col 是写死的列名，非用户输入）。 */
+function minutesExpr(col: string): string {
+  return `(CAST(substr(${col}, 1, 2) AS INTEGER) * 60 + CAST(substr(${col}, 4, 2) AS INTEGER))`;
+}
+
+/**
+ * 排课与老师负荷。
+ *
+ * - teacherLoad   区间内正常课节，按 teacher_id 分组的课节数与总时长（分钟）；
+ *                 时长 = end_time 分钟数 − start_time 分钟数（'HH:MM' 在 SQL 内换算）；
+ *                 teacher_id 为空 → 「未指定」；按总时长降序
+ * - cancelRate    区间内未软删课节里，停课占比；分母为 0 → null
+ * - classFillRate 每个未结课班级的「在册人数 ÷ capacity」；capacity 缺失或 <=0 → rate 为 null
+ * - emptySessions 区间内、已发生、正常、关联出勤/补课人次为 0 的课节
+ */
+export function getCourseStats(range: ReportRange): ReportCourseStats {
+  const db = getDb();
+  const { from, to } = range;
+  const today = todayLocal();
+
+  const durMinutes = `${minutesExpr('s.end_time')} - ${minutesExpr('s.start_time')}`;
+
+  const teacherLoad = db
+    .prepare(
+      `SELECT s.teacher_id AS teacherId,
+              COALESCE(t.name, '未指定') AS teacherName,
+              COUNT(*) AS sessionCount,
+              SUM(${durMinutes}) AS minutes
+         FROM class_sessions s
+         LEFT JOIN teachers t ON t.id = s.teacher_id
+        WHERE s.deleted_at IS NULL AND s.status = '正常'
+          AND s.session_date BETWEEN @from AND @to
+        GROUP BY s.teacher_id
+        ORDER BY minutes DESC, teacherName`,
+    )
+    .all({ from, to }) as ReportCourseStats['teacherLoad'];
+
+  const cr = db
+    .prepare(
+      `SELECT COALESCE(SUM(status = '正常'), 0) AS normal,
+              COALESCE(SUM(status = '停课'), 0) AS cancelled
+         FROM class_sessions
+        WHERE deleted_at IS NULL AND session_date BETWEEN @from AND @to`,
+    )
+    .get({ from, to }) as { normal: number; cancelled: number };
+  const crTotal = cr.normal + cr.cancelled;
+  const cancelRate = {
+    normal: cr.normal,
+    cancelled: cr.cancelled,
+    rate: crTotal > 0 ? cr.cancelled / crTotal : null,
+  };
+
+  const fillRaw = db
+    .prepare(
+      `SELECT c.id AS classId, c.name AS className, c.capacity AS capacity,
+              (SELECT COUNT(*) FROM class_students cs
+                WHERE cs.class_id = c.id AND cs.left_at IS NULL) AS enrolled
+         FROM classes c
+        WHERE c.deleted_at IS NULL AND c.status <> '结课'
+        ORDER BY c.name COLLATE NOCASE`,
+    )
+    .all() as { classId: number; className: string; capacity: number | null; enrolled: number }[];
+  const classFillRate = fillRaw.map((r) => ({
+    ...r,
+    rate: r.capacity != null && r.capacity > 0 ? r.enrolled / r.capacity : null,
+  }));
+
+  const emptySessions = db
+    .prepare(
+      `SELECT s.id AS sessionId, c.name AS className,
+              s.session_date AS sessionDate, s.start_time AS startTime
+         FROM class_sessions s JOIN classes c ON c.id = s.class_id
+        WHERE s.deleted_at IS NULL AND s.status = '正常'
+          AND s.session_date BETWEEN @from AND @to AND s.session_date <= @today
+          AND NOT EXISTS (
+            SELECT 1 FROM attendance_records a
+             WHERE a.session_id = s.id AND a.deleted_at IS NULL
+               AND a.type IN ('出勤','补课'))
+        ORDER BY s.session_date DESC, s.start_time DESC
+        LIMIT ${ALERT_LIMIT}`,
+    )
+    .all({ from, to, today }) as ReportCourseStats['emptySessions'];
+
+  return { teacherLoad, cancelRate, classFillRate, emptySessions };
 }
