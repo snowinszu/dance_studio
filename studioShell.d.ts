@@ -17,6 +17,8 @@ import type {
   CheckInResult,
   ClassSchedule,
   ClassScheduleInput,
+  ClassSessionInput,
+  ClassSessionListItem,
   CourseClass,
   CourseClassInput,
   CourseClassListItem,
@@ -24,6 +26,7 @@ import type {
   CustomFieldDef,
   CustomFieldInput,
   CustomFieldPatch,
+  GenerateMonthResult,
   ImportReport,
   InventoryImportReport,
   InventoryItem,
@@ -41,6 +44,10 @@ import type {
   RosterMutationResult,
   ScheduleMutationResult,
   SchemaGroup,
+  SessionDateItem,
+  SessionMonthQuery,
+  SessionMutationResult,
+  SessionUpdateInput,
   Student,
   StudentInput,
   Tag,
@@ -181,6 +188,15 @@ declare global {
       weeklyTimetable(
         query?: WeeklyTimetableQuery,
       ): Promise<IpcResult<WeeklyTimetableEntry[]>>;
+      generateMonth(args: {
+        year: number;
+        month: number;
+      }): Promise<IpcResult<GenerateMonthResult>>;
+      sessionsByMonth(query: SessionMonthQuery): Promise<IpcResult<ClassSessionListItem[]>>;
+      sessionsByDate(args: { date: string }): Promise<IpcResult<SessionDateItem[]>>;
+      sessionCreate(input: ClassSessionInput): Promise<IpcResult<SessionMutationResult>>;
+      sessionUpdate(input: SessionUpdateInput): Promise<IpcResult<SessionMutationResult>>;
+      sessionDelete(id: number): Promise<IpcResult<{ id: number }>>;
     };
   }
 

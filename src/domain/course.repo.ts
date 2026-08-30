@@ -14,12 +14,15 @@ import { getDb } from '../db/connection';
 import { AppError } from '../shared/app-error';
 import type {
   ClassSchedule,
+  ClassSessionListItem,
   CourseClass,
   CourseClassListItem,
   CourseClassListQuery,
+  GenerateMonthResult,
   RosterMember,
   RosterMutationResult,
   ScheduleConflict,
+  SessionDateItem,
   Teacher,
   WeeklyTimetableEntry,
   WeeklyTimetableQuery,
@@ -29,6 +32,8 @@ import type {
   RosterAddValues,
   RosterRemoveValues,
   ScheduleValues,
+  SessionCreateValues,
+  SessionUpdateValues,
   TeacherValues,
 } from './course.validation';
 import { overlaps, rangeOverlaps } from './course.validation';
@@ -570,4 +575,319 @@ export function weeklyTimetable(query: WeeklyTimetableQuery = {}): WeeklyTimetab
         ORDER BY sch.weekday, sch.start_time, c.name COLLATE NOCASE`,
     )
     .all(params) as WeeklyTimetableEntry[];
+}
+
+/* ═══════════════════════════ 排课实例 ═══════════════════════════ */
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+function ymdOf(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+/** 字典序即时间序，直接字符串比较。 */
+function maxYmd(a: string, b: string): string {
+  return a >= b ? a : b;
+}
+function minYmd(a: string, b: string): string {
+  return a <= b ? a : b;
+}
+
+const SESSION_LIST_SELECT = `
+  SELECT se.id, se.class_id AS classId, se.schedule_id AS scheduleId,
+         se.session_date AS sessionDate, se.start_time AS startTime, se.end_time AS endTime,
+         se.teacher_id AS teacherId, se.room, se.status, se.origin, se.note,
+         se.created_at AS createdAt, se.updated_at AS updatedAt, se.deleted_at AS deletedAt,
+         c.name AS className, c.dance_type AS danceType, t.name AS teacherName
+    FROM class_sessions se
+    JOIN classes c ON c.id = se.class_id
+    LEFT JOIN teachers t ON t.id = se.teacher_id
+`;
+
+function getSessionItem(id: number): ClassSessionListItem | undefined {
+  return getDb().prepare(`${SESSION_LIST_SELECT} WHERE se.id = ?`).get(id) as
+    | ClassSessionListItem
+    | undefined;
+}
+
+/**
+ * 把周期规则按月物化成排课实例。幂等：靠 (schedule_id, session_date) 存在性判断，
+ * 已存在（含被人工改过 / 停课的）跳过，软删的不算存在（会重铺一条新的）。
+ * 只为「在读」且未软删的班 / 未软删规则生成。
+ */
+export function generateMonth(year: number, month: number): GenerateMonthResult {
+  const db = getDb();
+  const lastDay = new Date(year, month, 0).getDate();
+  const monthStart = `${year}-${pad2(month)}-01`;
+  const monthEnd = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+  const now = nowIso();
+
+  const schedules = db
+    .prepare(
+      `SELECT sch.id, sch.class_id AS classId, sch.weekday,
+              sch.start_time AS startTime, sch.end_time AS endTime,
+              sch.teacher_id AS schTeacher, sch.room AS schRoom,
+              sch.effective_from AS effFrom, sch.effective_to AS effTo,
+              c.teacher_id AS classTeacher, c.room AS classRoom,
+              c.start_date AS classStart, c.end_date AS classEnd
+         FROM class_schedules sch
+         JOIN classes c ON c.id = sch.class_id
+        WHERE sch.deleted_at IS NULL AND c.deleted_at IS NULL AND c.status = '在读'`,
+    )
+    .all() as {
+    id: number;
+    classId: number;
+    weekday: number;
+    startTime: string;
+    endTime: string;
+    schTeacher: number | null;
+    schRoom: string | null;
+    effFrom: string | null;
+    effTo: string | null;
+    classTeacher: number | null;
+    classRoom: string | null;
+    classStart: string | null;
+    classEnd: string | null;
+  }[];
+
+  const exists = db.prepare(
+    `SELECT 1 FROM class_sessions
+      WHERE schedule_id = @sid AND session_date = @d AND deleted_at IS NULL LIMIT 1`,
+  );
+  const ins = db.prepare(
+    `INSERT INTO class_sessions
+       (class_id, schedule_id, session_date, start_time, end_time, teacher_id, room,
+        status, origin, note, created_at, updated_at)
+     VALUES
+       (@classId, @scheduleId, @date, @startTime, @endTime, @teacherId, @room,
+        '正常', '计划', NULL, @now, @now)`,
+  );
+
+  const tx = db.transaction((): number => {
+    let created = 0;
+    for (const s of schedules) {
+      const lo = maxYmd(monthStart, s.effFrom ?? s.classStart ?? monthStart);
+      const hi = minYmd(monthEnd, s.effTo ?? s.classEnd ?? monthEnd);
+      if (lo > hi) continue;
+      const teacherId = s.schTeacher ?? s.classTeacher;
+      const room = (s.schRoom && s.schRoom.trim()) || s.classRoom || null;
+      for (let day = 1; day <= lastDay; day++) {
+        const dt = new Date(year, month - 1, day);
+        if (dt.getDay() !== s.weekday) continue;
+        const dYmd = ymdOf(dt);
+        if (dYmd < lo || dYmd > hi) continue;
+        if (exists.get({ sid: s.id, d: dYmd })) continue;
+        ins.run({
+          classId: s.classId,
+          scheduleId: s.id,
+          date: dYmd,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          teacherId,
+          room,
+          now,
+        });
+        created++;
+      }
+    }
+    return created;
+  });
+
+  return { created: tx() };
+}
+
+/**
+ * 某月的排课实例（读带写：内部先 generateMonth 补齐当月）。
+ * teacherId 给出时按 class_sessions.teacher_id 过滤（teacher_id 为 NULL 的实例不出现）。
+ * 含 status='停课' 的实例（带标记）。
+ */
+export function sessionsByMonth(query: {
+  teacherId: number | null;
+  year: number;
+  month: number;
+}): ClassSessionListItem[] {
+  generateMonth(query.year, query.month);
+  const lastDay = new Date(query.year, query.month, 0).getDate();
+  const monthStart = `${query.year}-${pad2(query.month)}-01`;
+  const monthEnd = `${query.year}-${pad2(query.month)}-${pad2(lastDay)}`;
+  const where = ['se.deleted_at IS NULL', 'se.session_date >= @from', 'se.session_date <= @to'];
+  const params: Record<string, string | number> = { from: monthStart, to: monthEnd };
+  if (query.teacherId != null) {
+    where.push('se.teacher_id = @tid');
+    params['tid'] = query.teacherId;
+  }
+  return getDb()
+    .prepare(
+      `${SESSION_LIST_SELECT} WHERE ${where.join(' AND ')}
+        ORDER BY se.session_date, se.start_time, c.name COLLATE NOCASE`,
+    )
+    .all(params) as ClassSessionListItem[];
+}
+
+/** 某一天的排课实例（供考勤「选择课节」用）。含停课实例（带标记，渲染层置灰）。 */
+export function sessionsByDate(date: string): SessionDateItem[] {
+  return getDb()
+    .prepare(
+      `SELECT se.id, se.class_id AS classId, c.name AS className,
+              se.teacher_id AS teacherId, t.name AS teacherName,
+              se.start_time AS startTime, se.end_time AS endTime, se.status,
+              (SELECT COUNT(*) FROM class_students cs
+                WHERE cs.class_id = se.class_id AND cs.left_at IS NULL) AS activeRosterCount
+         FROM class_sessions se
+         JOIN classes c ON c.id = se.class_id
+         LEFT JOIN teachers t ON t.id = se.teacher_id
+        WHERE se.deleted_at IS NULL AND se.session_date = ?
+        ORDER BY se.start_time, c.name COLLATE NOCASE`,
+    )
+    .all(date) as SessionDateItem[];
+}
+
+/**
+ * 同一天的排课实例互相扫时段重叠：同 session_date、未软删、status != '停课'、id != 自己，
+ * 且（同 teacher_id 非空 → kind:'老师' | 同 room 非空 → kind:'教室'）。非阻断。
+ */
+export function checkSessionConflicts(row: {
+  id: number;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  teacherId: number | null;
+  room: string | null;
+}): ScheduleConflict[] {
+  const others = getDb()
+    .prepare(
+      `SELECT se.id, se.start_time AS startTime, se.end_time AS endTime,
+              se.teacher_id AS teacherId, se.room, c.name AS className
+         FROM class_sessions se
+         JOIN classes c ON c.id = se.class_id
+        WHERE se.deleted_at IS NULL AND se.status != '停课'
+          AND se.session_date = @date AND se.id != @id`,
+    )
+    .all({ date: row.sessionDate, id: row.id }) as {
+    id: number;
+    startTime: string;
+    endTime: string;
+    teacherId: number | null;
+    room: string | null;
+    className: string;
+  }[];
+
+  const room = (row.room ?? '').trim();
+  const out: ScheduleConflict[] = [];
+  for (const o of others) {
+    if (!overlaps(row.startTime, row.endTime, o.startTime, o.endTime)) continue;
+    const sameTeacher = row.teacherId != null && o.teacherId === row.teacherId;
+    const sameRoom = room.length > 0 && (o.room ?? '').trim() === room;
+    if (sameTeacher || sameRoom) {
+      out.push({
+        kind: sameTeacher ? '老师' : '教室',
+        refType: '课节',
+        refId: o.id,
+        label: o.className,
+        weekdayOrDate: row.sessionDate,
+        startTime: o.startTime,
+        endTime: o.endTime,
+      });
+    }
+  }
+  return out;
+}
+
+function sessionConflictInput(s: ClassSessionListItem) {
+  return {
+    id: s.id,
+    sessionDate: s.sessionDate,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    teacherId: s.teacherId,
+    room: s.room,
+  };
+}
+
+/** 手动加课：origin='手动'、schedule_id=NULL、status='正常'。 */
+export function sessionCreate(values: SessionCreateValues): {
+  session: ClassSessionListItem;
+  conflicts: ScheduleConflict[];
+} {
+  assertClassExists(values.classId);
+  if (values.teacherId != null) assertTeacherExists(values.teacherId);
+  const db = getDb();
+  const dup = db
+    .prepare(
+      `SELECT 1 FROM class_sessions
+        WHERE class_id = @classId AND session_date = @date AND start_time = @startTime
+          AND deleted_at IS NULL LIMIT 1`,
+    )
+    .get({ classId: values.classId, date: values.sessionDate, startTime: values.startTime });
+  if (dup) throw new AppError('DUPLICATE_SESSION', '该班这个时间已有一节课');
+
+  const now = nowIso();
+  const info = db
+    .prepare(
+      `INSERT INTO class_sessions
+         (class_id, schedule_id, session_date, start_time, end_time, teacher_id, room,
+          status, origin, note, created_at, updated_at)
+       VALUES
+         (@classId, NULL, @sessionDate, @startTime, @endTime, @teacherId, @room,
+          '正常', '手动', @note, @now, @now)`,
+    )
+    .run({ ...values, now });
+  const session = getSessionItem(Number(info.lastInsertRowid))!;
+  return { session, conflicts: checkSessionConflicts(sessionConflictInput(session)) };
+}
+
+/** 逐日微调：停课 / 恢复 / 改时间（限同天）/ 换老师（不改来源规则）。 */
+export function sessionUpdate(values: SessionUpdateValues): {
+  session: ClassSessionListItem;
+  conflicts: ScheduleConflict[];
+} {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT id, note FROM class_sessions WHERE id = ? AND deleted_at IS NULL`)
+    .get(values.id) as { id: number; note: string | null } | undefined;
+  if (!row) throw new AppError('SESSION_NOT_FOUND', '该课节不存在，可能已被删除');
+  const now = nowIso();
+
+  if (values.action === '停课') {
+    db.prepare(
+      `UPDATE class_sessions SET status = '停课', note = @note, updated_at = @now WHERE id = @id`,
+    ).run({ note: values.note ?? row.note, now, id: values.id });
+  } else if (values.action === '恢复') {
+    db.prepare(`UPDATE class_sessions SET status = '正常', updated_at = @now WHERE id = @id`).run({
+      now,
+      id: values.id,
+    });
+  } else if (values.action === '改时间') {
+    db.prepare(
+      `UPDATE class_sessions SET start_time = @s, end_time = @e, updated_at = @now WHERE id = @id`,
+    ).run({ s: values.startTime, e: values.endTime, now, id: values.id });
+  } else {
+    // 换老师：teacherId 给出须存在；显式 null = 取消指派
+    if (values.teacherId != null) assertTeacherExists(values.teacherId);
+    db.prepare(
+      `UPDATE class_sessions SET teacher_id = @tid, updated_at = @now WHERE id = @id`,
+    ).run({ tid: values.teacherId, now, id: values.id });
+  }
+
+  const session = getSessionItem(values.id)!;
+  const conflicts =
+    values.action === '改时间' || values.action === '换老师'
+      ? checkSessionConflicts(sessionConflictInput(session))
+      : [];
+  return { session, conflicts };
+}
+
+/** 软删一条排课实例。不影响已写入的考勤记录。 */
+export function sessionSoftDelete(id: number): { id: number } {
+  const db = getDb();
+  const cur = db
+    .prepare(`SELECT id FROM class_sessions WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!cur) throw new AppError('SESSION_NOT_FOUND', '该课节不存在，可能已被删除');
+  const ts = nowIso();
+  db.prepare(`UPDATE class_sessions SET deleted_at = @ts, updated_at = @ts WHERE id = @id`).run({
+    ts,
+    id,
+  });
+  return { id };
 }

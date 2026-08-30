@@ -76,6 +76,12 @@ const CH = {
   courseScheduleUpdate: 'course:scheduleUpdate',
   courseScheduleDelete: 'course:scheduleDelete',
   courseWeeklyTimetable: 'course:weeklyTimetable',
+  courseGenerateMonth: 'course:generateMonth',
+  courseSessionsByMonth: 'course:sessionsByMonth',
+  courseSessionsByDate: 'course:sessionsByDate',
+  courseSessionCreate: 'course:sessionCreate',
+  courseSessionUpdate: 'course:sessionUpdate',
+  courseSessionDelete: 'course:sessionDelete',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -169,6 +175,12 @@ const api = {
     scheduleUpdate: (id: number, input: unknown) => invoke(CH.courseScheduleUpdate, id, input),
     scheduleDelete: (id: number) => invoke(CH.courseScheduleDelete, id),
     weeklyTimetable: (query?: unknown) => invoke(CH.courseWeeklyTimetable, query),
+    generateMonth: (args: unknown) => invoke(CH.courseGenerateMonth, args),
+    sessionsByMonth: (query: unknown) => invoke(CH.courseSessionsByMonth, query),
+    sessionsByDate: (args: unknown) => invoke(CH.courseSessionsByDate, args),
+    sessionCreate: (input: unknown) => invoke(CH.courseSessionCreate, input),
+    sessionUpdate: (input: unknown) => invoke(CH.courseSessionUpdate, input),
+    sessionDelete: (id: number) => invoke(CH.courseSessionDelete, id),
   },
 };
 

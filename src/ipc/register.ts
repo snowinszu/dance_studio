@@ -13,6 +13,7 @@ import type {
   AttendanceListQuery,
   BatchCheckInInput,
   ClassScheduleInput,
+  ClassSessionInput,
   CourseClassInput,
   CourseClassListQuery,
   CustomFieldInput,
@@ -26,6 +27,8 @@ import type {
   RosterAddInput,
   RosterCandidateQuery,
   RosterRemoveInput,
+  SessionMonthQuery,
+  SessionUpdateInput,
   StudentInput,
   TeacherInput,
   WeeklyTimetableQuery,
@@ -61,9 +64,12 @@ import * as attendanceRepo from '../domain/attendance.repo';
 import * as courseRepo from '../domain/course.repo';
 import {
   validateClass,
+  validateMonthQuery,
   validateRosterAdd,
   validateRosterRemove,
   validateSchedule,
+  validateSessionCreate,
+  validateSessionUpdate,
   validateTeacher,
 } from '../domain/course.validation';
 import { buildSchema, validateStudent } from '../domain/validation';
@@ -538,4 +544,46 @@ export function registerIpc(): void {
   handle(CH.courseWeeklyTimetable, (query?: WeeklyTimetableQuery) =>
     courseRepo.weeklyTimetable(query ?? {}),
   );
+
+  // —— 课程管理：排课实例 ——
+  handle(CH.courseGenerateMonth, (args?: { year?: number; month?: number }) => {
+    const { values, error } = validateMonthQuery((args ?? {}) as SessionMonthQuery);
+    if (error) throw new AppError('BAD_REQUEST', error);
+    return courseRepo.generateMonth(values.year, values.month);
+  });
+
+  handle(CH.courseSessionsByMonth, (query?: SessionMonthQuery) => {
+    const { values, error } = validateMonthQuery(query ?? ({} as SessionMonthQuery));
+    if (error) throw new AppError('BAD_REQUEST', error);
+    return courseRepo.sessionsByMonth(values);
+  });
+
+  handle(CH.courseSessionsByDate, (args?: { date?: string }) => {
+    const date = typeof args?.date === 'string' ? args.date.trim() : '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new AppError('BAD_REQUEST', '缺少合法日期');
+    return courseRepo.sessionsByDate(date);
+  });
+
+  handle(CH.courseSessionCreate, (input?: ClassSessionInput) => {
+    const { values, errors, timeError } = validateSessionCreate(input ?? ({} as ClassSessionInput));
+    if (timeError) throw new AppError('INVALID_TIME_RANGE', timeError, { endTime: timeError });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.sessionCreate(values);
+  });
+
+  handle(CH.courseSessionUpdate, (input?: SessionUpdateInput) => {
+    const { values, errors, timeError } = validateSessionUpdate(input ?? ({} as SessionUpdateInput));
+    if (timeError) throw new AppError('INVALID_TIME_RANGE', timeError, { endTime: timeError });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查操作参数', errors);
+    }
+    return courseRepo.sessionUpdate(values);
+  });
+
+  handle(CH.courseSessionDelete, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少课节 id');
+    return courseRepo.sessionSoftDelete(Number(id));
+  });
 }
