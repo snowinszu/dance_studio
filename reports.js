@@ -11,6 +11,8 @@
  * 渲染层不参与 TypeScript 构建，所以这里是手写 ES module。
  */
 
+import { lineChartSVG, heatmapSVG } from './reports.charts.js';
+
 const shell = window.studioShell;
 const view = document.getElementById('view');
 const toastEl = document.getElementById('toast');
@@ -195,6 +197,62 @@ function kpiCard(label, value, warn) {
   );
 }
 
+/** 小标题。 */
+function subHead(text) {
+  return el('div', { class: 'sub-head' }, text);
+}
+
+/**
+ * 水平分布条列表：[{ label, value }] → 按最大值归一化的进度条。
+ * 超过 limit 行给「还有 N 项」。空数组显示占位。
+ */
+function distList(items, limit = 12) {
+  if (!items.length) return el('div', { class: 'sec-empty' }, '暂无数据');
+  const max = Math.max(1, ...items.map((i) => i.value));
+  const rows = items.slice(0, limit).map((it) =>
+    el(
+      'div',
+      { class: 'dist-row' },
+      el('span', { class: 'd-label', title: it.label }, it.label),
+      el(
+        'div',
+        { class: 'd-track' },
+        el('div', { class: 'd-fill', style: `width:${Math.round((it.value / max) * 100)}%` }),
+      ),
+      el('span', { class: 'd-value' }, String(it.value)),
+    ),
+  );
+  if (items.length > limit) {
+    rows.push(el('div', { class: 'a-more' }, `……还有 ${items.length - limit} 项`));
+  }
+  return el('div', { class: 'dist-list' }, ...rows);
+}
+
+/** 简单两列表格：表头 [左, 右]，行 [左值, 右值(数字右对齐)]。 */
+function twoColTable(headLeft, headRight, rows) {
+  if (!rows.length) return el('div', { class: 'sec-empty' }, '暂无数据');
+  return el(
+    'div',
+    { class: 'table-scroll' },
+    el(
+      'table',
+      { class: 'data-table' },
+      el(
+        'thead',
+        {},
+        el('tr', {}, el('th', {}, headLeft), el('th', { class: 'num' }, headRight)),
+      ),
+      el(
+        'tbody',
+        {},
+        ...rows.map(([l, r]) =>
+          el('tr', {}, el('td', {}, l), el('td', { class: 'num' }, String(r))),
+        ),
+      ),
+    ),
+  );
+}
+
 /* ───────────────────────── 预警中心 ───────────────────────── */
 
 /** 一组预警：标题 + 计数徽标 + 明细清单（每组最多渲染 50 行，超出给「还有 N 条」）。 */
@@ -265,6 +323,144 @@ function renderOverview(ov) {
   return section('概览', true, grid);
 }
 
+/* ───────────────────────── 考勤指标区 ───────────────────────── */
+
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+/** 12 个 2 小时桶 + 「未知」 */
+const BUCKET_LABELS = Array.from({ length: 12 }, (_, i) => `${i * 2}–${i * 2 + 2}`).concat('未知');
+
+/** hourHeatmap 的稀疏行 → 7×13 稠密矩阵（列 0..11=时段桶，列 12=未知时段）。 */
+function buildHeatmapMatrix(cells) {
+  const m = Array.from({ length: 7 }, () => new Array(13).fill(0));
+  for (const c of cells) {
+    if (c.weekday < 0 || c.weekday > 6) continue;
+    const col = c.bucket === -1 ? 12 : c.bucket >= 0 && c.bucket <= 11 ? c.bucket : -1;
+    if (col < 0) continue;
+    m[c.weekday][col] += c.count;
+  }
+  return m;
+}
+
+/** 出勤排名的当前排序键，在同一次页面停留内保留。 */
+let rankSort = 'count'; // 'count' | 'rate'
+
+function sortedRanking(ranking) {
+  const arr = ranking.slice();
+  if (rankSort === 'rate') {
+    arr.sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1) || b.attendCount - a.attendCount);
+  } else {
+    arr.sort((a, b) => b.attendCount - a.attendCount || (b.rate ?? -1) - (a.rate ?? -1));
+  }
+  return arr;
+}
+
+/** 把排名表渲染进 mount 容器；点表头切换排序键后就地重渲染，不重新拉数。 */
+function renderRankingTable(ranking, mount) {
+  const th = (key, label) =>
+    el(
+      'th',
+      {
+        class: 'sortable num' + (rankSort === key ? ' on' : ''),
+        onclick: () => {
+          rankSort = key;
+          renderRankingTable(ranking, mount);
+        },
+      },
+      label + (rankSort === key ? ' ↓' : ''),
+    );
+
+  const body = sortedRanking(ranking)
+    .slice(0, 100)
+    .map((r, i) =>
+      el(
+        'tr',
+        {},
+        el('td', {}, `${i + 1}. ${r.name}`),
+        el('td', { class: 'num' }, String(r.attendCount)),
+        el('td', { class: 'num' }, r.rate == null ? '—' : `${Math.round(r.rate * 100)}%`),
+      ),
+    );
+
+  mount.replaceChildren(
+    ranking.length === 0
+      ? el('div', { class: 'sec-empty' }, '暂无数据')
+      : el(
+          'table',
+          { class: 'data-table' },
+          el(
+            'thead',
+            {},
+            el('tr', {}, el('th', {}, '学员'), th('count', '出勤次数'), th('rate', '出勤率')),
+          ),
+          el('tbody', {}, ...body),
+        ),
+  );
+}
+
+function renderAttendance(stats) {
+  const rankMount = el('div', { class: 'table-scroll' });
+  renderRankingTable(stats.ranking, rankMount);
+
+  const heatMatrix = buildHeatmapMatrix(stats.hourHeatmap);
+
+  return section(
+    '考勤指标',
+    true,
+    subHead('课节数'),
+    el(
+      'div',
+      { class: 'stat-pair' },
+      el('div', { class: 'stat' }, el('b', {}, String(stats.sessionsThisMonth)), el('span', {}, '本月')),
+      el('div', { class: 'stat' }, el('b', {}, String(stats.sessionsThisYear)), el('span', {}, '本年')),
+    ),
+
+    subHead('月度出勤人次'),
+    el('div', {
+      class: 'chart',
+      html: lineChartSVG({
+        points: stats.monthlyCheckIns.map((m) => ({ label: m.month, value: m.count })),
+        width: 600,
+        height: 160,
+        title: '月度出勤人次趋势',
+      }),
+    }),
+    el(
+      'div',
+      { class: 'chart-xlabels' },
+      ...stats.monthlyCheckIns.map((m) => el('span', {}, `${m.month.slice(2)}·${m.count}`)),
+    ),
+
+    subHead('出勤排名'),
+    rankMount,
+
+    subHead('近 30 天缺勤 / 请假 TOP'),
+    twoColTable(
+      '学员',
+      '缺勤 + 请假',
+      stats.absenceTop.map((r, i) => [`${i + 1}. ${r.name}`, r.absentPlusLeave]),
+    ),
+
+    subHead('按老师（出勤人次）'),
+    distList(stats.byTeacher.map((t) => ({ label: t.teacher, value: t.checkIns }))),
+
+    subHead('按课程（出勤人次）'),
+    distList(stats.byDanceType.map((t) => ({ label: t.danceType, value: t.checkIns }))),
+
+    subHead('上课时段热力（星期 × 2 小时）'),
+    el('div', {
+      class: 'chart',
+      html: heatmapSVG({
+        matrix: heatMatrix,
+        rowLabels: WEEKDAY_LABELS,
+        colLabels: BUCKET_LABELS,
+        width: 640,
+        height: 200,
+        title: '上课时段热力',
+      }),
+    }),
+  );
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -327,6 +523,14 @@ async function load(body) {
     sections.push(renderOverview(overview));
   } catch (e) {
     sections.push(sectionError('概览', e));
+  }
+
+  // 考勤指标区
+  try {
+    const att = unwrap(await shell.reports.attendanceStats(range));
+    sections.push(renderAttendance(att));
+  } catch (e) {
+    sections.push(sectionError('考勤指标', e));
   }
 
   body.replaceChildren(...sections);

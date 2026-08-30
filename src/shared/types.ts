@@ -954,3 +954,34 @@ export interface ReportAlerts {
   /** 近 30 天内、已发生、正常、关联出勤/补课人次为 0 的课节 */
   emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
 }
+
+/** 考勤指标区。 */
+export interface ReportAttendanceStats {
+  /** 本月课节数（该月 1 号 → to，正常、未软删） */
+  sessionsThisMonth: number;
+  /** 本年课节数（该年 1/1 → to） */
+  sessionsThisYear: number;
+  /** 月度出勤人次（出勤+补课），'YYYY-MM' 升序，repo 已补齐区间内每个月（缺月为 0） */
+  monthlyCheckIns: { month: string; count: number }[];
+  /** 出勤排名（区间内有任意考勤记录的学员）。渲染层按 attendCount 或 rate 排序。 */
+  ranking: {
+    studentId: number;
+    name: string;
+    /** 出勤 + 补课 —— 「按次数」列 */
+    attendCount: number;
+    /** 出勤 —— 出勤率的分子 */
+    attendOnly: number;
+    /** 出勤 + 缺勤 + 请假 —— 出勤率的分母 */
+    scheduled: number;
+    /** attendOnly / scheduled；分母为 0 时为 null */
+    rate: number | null;
+  }[];
+  /** 近 30 天缺勤 + 请假最多的前 10 名 */
+  absenceTop: { studentId: number; name: string; absentPlusLeave: number }[];
+  /** 按 attendance_records.teacher 分组的出勤人次；空值归「未记录」 */
+  byTeacher: { teacher: string; checkIns: number }[];
+  /** 按 attendance_records.class_name 分组的出勤人次；空值归「未记录」 */
+  byDanceType: { danceType: string; checkIns: number }[];
+  /** 星期(0=周日..6) × 2 小时时段桶(0..11) 的出勤人次；attend_time 为空 → bucket=-1 */
+  hourHeatmap: { weekday: number; bucket: number; count: number }[];
+}

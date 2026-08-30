@@ -94,6 +94,7 @@ export const CH = {
   // 数据报表（纯只读聚合）
   reportsOverview: 'reports:overview',
   reportsAlerts: 'reports:alerts',
+  reportsAttendanceStats: 'reports:attendanceStats',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

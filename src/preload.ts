@@ -84,6 +84,7 @@ const CH = {
   courseSessionDelete: 'course:sessionDelete',
   reportsOverview: 'reports:overview',
   reportsAlerts: 'reports:alerts',
+  reportsAttendanceStats: 'reports:attendanceStats',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -189,6 +190,8 @@ const api = {
   reports: {
     overview: (range: { from: string; to: string }) => invoke(CH.reportsOverview, range),
     alerts: () => invoke(CH.reportsAlerts),
+    attendanceStats: (range: { from: string; to: string }) =>
+      invoke(CH.reportsAttendanceStats, range),
   },
 };
 

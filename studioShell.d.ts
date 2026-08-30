@@ -39,6 +39,7 @@ import type {
   ListResult,
   QuickCheckInInput,
   ReportAlerts,
+  ReportAttendanceStats,
   ReportOverview,
   ReportRange,
   RosterCandidate,
@@ -206,6 +207,7 @@ declare global {
     reports: {
       overview(range: ReportRange): Promise<IpcResult<ReportOverview>>;
       alerts(): Promise<IpcResult<ReportAlerts>>;
+      attendanceStats(range: ReportRange): Promise<IpcResult<ReportAttendanceStats>>;
     };
   }
 

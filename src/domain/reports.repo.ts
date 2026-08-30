@@ -12,7 +12,12 @@
  *   不在 SQL 里用 date('now')——那是 UTC，与库里本地日期串会差一天。
  */
 import { getDb } from '../db/connection';
-import type { ReportAlerts, ReportOverview, ReportRange } from '../shared/types';
+import type {
+  ReportAlerts,
+  ReportAttendanceStats,
+  ReportOverview,
+  ReportRange,
+} from '../shared/types';
 
 /* ───────────────────────── 日期小工具 ───────────────────────── */
 
@@ -41,6 +46,39 @@ function daysAgoLocal(n: number): string {
 function yearOf(ymd: string): number {
   const y = Number(ymd.slice(0, 4));
   return Number.isInteger(y) && y > 1900 ? y : new Date().getFullYear();
+}
+
+/** 'YYYY-MM-DD' → 当月 1 号 'YYYY-MM-01'。 */
+function firstOfMonth(ymd: string): string {
+  return `${ymd.slice(0, 7)}-01`;
+}
+
+/** 'YYYY-MM-DD' → 当年 1 月 1 号。 */
+function jan1(ymd: string): string {
+  return `${ymd.slice(0, 4)}-01-01`;
+}
+
+/**
+ * 列出 [from, to] 覆盖的所有自然月，'YYYY-MM' 升序。
+ * 用来给「月度趋势」补齐没有数据的月份（补 0），让折线不断档。
+ */
+function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let y = Number(from.slice(0, 4));
+  let m = Number(from.slice(5, 7));
+  const endY = Number(to.slice(0, 4));
+  const endM = Number(to.slice(5, 7));
+  // 起点晚于终点（理论上 checkedRange 已挡）→ 返回空
+  while (y < endY || (y === endY && m <= endM)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    if (out.length > 600) break; // 安全阀：最多 50 年
+  }
+  return out;
 }
 
 /* ───────────────────────── 概览 KPI ───────────────────────── */
@@ -200,4 +238,147 @@ export function getAlerts(): ReportAlerts {
     .all({ cutoffEmpty, today }) as ReportAlerts['emptySessions'];
 
   return { lowStock, lowBalance, dormant, emptySessions };
+}
+
+/* ───────────────────────── 考勤指标 ───────────────────────── */
+
+/** 排行 / TOP 榜的返回行数上限。 */
+const TOP_LIMIT = 10;
+
+/**
+ * 考勤维度的趋势、排名、缺勤预警、分布、时段热力。
+ *
+ * - sessionsThisMonth / sessionsThisYear 由 to 推（该月 1 号→to、该年 1/1→to），
+ *   恒定展示，不受传入 range 影响
+ * - monthlyCheckIns 出勤人次（出勤+补课）按自然月分组，repo 补齐 [from,to] 的每个月
+ * - ranking 每个「区间内有任意考勤记录」的学员：
+ *     attendCount = 出勤+补课（「按次数」列）
+ *     attendOnly  = 出勤
+ *     scheduled   = 出勤+缺勤+请假
+ *     rate = scheduled>0 ? attendOnly/scheduled : null（「按出勤率」列）
+ *   JOIN students 不加 deleted 过滤——离校学员的历史仍要能看到
+ * - absenceTop 近 30 天缺勤+请假最多的前 10
+ * - byTeacher / byDanceType 按 attendance_records.teacher / class_name 分组的出勤人次
+ * - hourHeatmap 星期(0=周日) × 2 小时时段桶(0..11) 的出勤人次；attend_time 为空归 bucket=-1
+ */
+export function getAttendanceStats(range: ReportRange): ReportAttendanceStats {
+  const db = getDb();
+  const { from, to } = range;
+  const cutoff30 = daysAgoLocal(30);
+
+  const sessionCount = (lo: string, hi: string): number =>
+    (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM class_sessions
+            WHERE deleted_at IS NULL AND status = '正常'
+              AND session_date BETWEEN @lo AND @hi`,
+        )
+        .get({ lo, hi }) as { n: number }
+    ).n;
+
+  const sessionsThisMonth = sessionCount(firstOfMonth(to), to);
+  const sessionsThisYear = sessionCount(jan1(to), to);
+
+  const monthRows = db
+    .prepare(
+      `SELECT substr(attend_date, 1, 7) AS ym, COUNT(*) AS n
+         FROM attendance_records
+        WHERE deleted_at IS NULL AND type IN ('出勤','补课')
+          AND attend_date BETWEEN @from AND @to
+        GROUP BY ym`,
+    )
+    .all({ from, to }) as { ym: string; n: number }[];
+  const monthMap = new Map(monthRows.map((r) => [r.ym, r.n]));
+  const monthlyCheckIns = monthsBetween(from, to).map((month) => ({
+    month,
+    count: monthMap.get(month) ?? 0,
+  }));
+
+  const rankingRaw = db
+    .prepare(
+      `SELECT a.student_id AS studentId, s.name AS name,
+              SUM(a.type IN ('出勤','补课'))       AS attendCount,
+              SUM(a.type = '出勤')                 AS attendOnly,
+              SUM(a.type IN ('出勤','缺勤','请假')) AS scheduled
+         FROM attendance_records a
+         JOIN students s ON s.id = a.student_id
+        WHERE a.deleted_at IS NULL AND a.attend_date BETWEEN @from AND @to
+        GROUP BY a.student_id`,
+    )
+    .all({ from, to }) as {
+    studentId: number;
+    name: string;
+    attendCount: number;
+    attendOnly: number;
+    scheduled: number;
+  }[];
+  const ranking = rankingRaw
+    .map((r) => ({
+      ...r,
+      rate: r.scheduled > 0 ? r.attendOnly / r.scheduled : null,
+    }))
+    .sort(
+      (a, b) =>
+        b.attendCount - a.attendCount || a.name.localeCompare(b.name, 'zh'),
+    );
+
+  const absenceTop = db
+    .prepare(
+      `SELECT a.student_id AS studentId, s.name AS name, COUNT(*) AS absentPlusLeave
+         FROM attendance_records a
+         JOIN students s ON s.id = a.student_id
+        WHERE a.deleted_at IS NULL AND a.type IN ('缺勤','请假')
+          AND a.attend_date >= @cutoff30
+        GROUP BY a.student_id
+        ORDER BY absentPlusLeave DESC, s.name COLLATE NOCASE
+        LIMIT ${TOP_LIMIT}`,
+    )
+    .all({ cutoff30 }) as ReportAttendanceStats['absenceTop'];
+
+  const byTeacher = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(teacher), ''), '未记录') AS teacher, COUNT(*) AS checkIns
+         FROM attendance_records
+        WHERE deleted_at IS NULL AND type IN ('出勤','补课')
+          AND attend_date BETWEEN @from AND @to
+        GROUP BY teacher
+        ORDER BY checkIns DESC, teacher`,
+    )
+    .all({ from, to }) as ReportAttendanceStats['byTeacher'];
+
+  const byDanceType = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(class_name), ''), '未记录') AS danceType, COUNT(*) AS checkIns
+         FROM attendance_records
+        WHERE deleted_at IS NULL AND type IN ('出勤','补课')
+          AND attend_date BETWEEN @from AND @to
+        GROUP BY danceType
+        ORDER BY checkIns DESC, danceType`,
+    )
+    .all({ from, to }) as ReportAttendanceStats['byDanceType'];
+
+  const hourHeatmap = db
+    .prepare(
+      `SELECT CAST(strftime('%w', attend_date) AS INTEGER) AS weekday,
+              CASE WHEN attend_time IS NULL OR attend_time = ''
+                   THEN -1 ELSE CAST(substr(attend_time, 1, 2) AS INTEGER) / 2 END AS bucket,
+              COUNT(*) AS count
+         FROM attendance_records
+        WHERE deleted_at IS NULL AND type IN ('出勤','补课')
+          AND attend_date BETWEEN @from AND @to
+        GROUP BY weekday, bucket`,
+    )
+    .all({ from, to }) as ReportAttendanceStats['hourHeatmap'];
+
+  return {
+    sessionsThisMonth,
+    sessionsThisYear,
+    monthlyCheckIns,
+    ranking,
+    absenceTop,
+    byTeacher,
+    byDanceType,
+    hourHeatmap,
+  };
 }
