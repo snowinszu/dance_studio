@@ -19,6 +19,7 @@ import type {
   BatchCheckInResult,
   BatchCheckInRowResult,
   CheckInResult,
+  MonthlySummaryRow,
   RosterCandidate,
   RosterCandidateQuery,
 } from '../shared/types';
@@ -287,11 +288,13 @@ export function batchCreate(list: RecordValues[]): BatchCheckInResult {
 }
 
 /**
- * 考勤流水列表：JOIN 出学员姓名 / 电话（学员即使已软删也照常带出），
- * 默认排除已撤销行，按考勤日期倒序、同日按 id 倒序，分页。
+ * 把列表 / 汇总共用的筛选条件（日期区间 / 学员关键字 / 类型 + 排除已撤销）
+ * 拼成 WHERE 片段与命名参数。表别名固定 a（attendance_records）、s（students）。
  */
-export function listRecords(query: AttendanceListQuery = {}): AttendanceListResult {
-  const db = getDb();
+function recordFilter(query: AttendanceListQuery): {
+  where: string[];
+  params: Record<string, string | number>;
+} {
   const where: string[] = ['a.deleted_at IS NULL'];
   const params: Record<string, string | number> = {};
 
@@ -315,6 +318,16 @@ export function listRecords(query: AttendanceListQuery = {}): AttendanceListResu
     params['ty'] = type;
     where.push('a.type = @ty');
   }
+  return { where, params };
+}
+
+/**
+ * 考勤流水列表：JOIN 出学员姓名 / 电话（学员即使已软删也照常带出），
+ * 默认排除已撤销行，按考勤日期倒序、同日按 id 倒序，分页。
+ */
+export function listRecords(query: AttendanceListQuery = {}): AttendanceListResult {
+  const db = getDb();
+  const { where, params } = recordFilter(query);
 
   const whereSql = where.join(' AND ');
 
@@ -400,4 +413,34 @@ function parseJsonArray(raw: unknown): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * 按月汇总：某学员某月的各类型计数 + 当月消耗课时 + 当前实时剩余课时。
+ * 遵循与列表同一套筛选（日期区间 / 关键字 / 类型），排除已撤销行。仅导出用，无独立 IPC。
+ */
+export function monthlySummary(query: AttendanceListQuery = {}): MonthlySummaryRow[] {
+  const db = getDb();
+  const { where, params } = recordFilter(query);
+  return db
+    .prepare(
+      `SELECT s.id            AS studentId,
+              s.name          AS studentName,
+              s.phone_primary AS studentPhone,
+              substr(a.attend_date, 1, 7) AS month,
+              SUM(a.type = '出勤') AS attendCount,
+              SUM(a.type = '请假') AS leaveCount,
+              SUM(a.type = '缺勤') AS absentCount,
+              SUM(a.type = '补课') AS makeupCount,
+              SUM(a.type = '试听') AS trialCount,
+              COALESCE(SUM(CASE WHEN a.lessons_delta < 0 THEN -a.lessons_delta ELSE 0 END), 0)
+                AS lessonsConsumed,
+              s.remaining_lessons AS remainingLessons
+         FROM attendance_records a
+         JOIN students s ON s.id = a.student_id
+        WHERE ${where.join(' AND ')}
+        GROUP BY s.id, month
+        ORDER BY month DESC, s.name COLLATE NOCASE`,
+    )
+    .all(params) as MonthlySummaryRow[];
 }

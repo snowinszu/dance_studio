@@ -37,6 +37,7 @@ import {
   importItems,
   readItemsPreview,
 } from '../io/inventory-xlsx';
+import { exportRecords } from '../io/attendance-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
@@ -362,5 +363,18 @@ export function registerIpc(): void {
       throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
     }
     return attendanceRepo.adjustLessons(values);
+  });
+
+  handle(CH.attendanceExport, async (query?: AttendanceListQuery) => {
+    const filePath = await pickSavePath('导出考勤记录', `考勤记录-${ymdCompact()}.xlsx`);
+    try {
+      const r = await exportRecords(query ?? {}, filePath);
+      return { filePath, ...r };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   });
 }

@@ -123,6 +123,9 @@ declare global {
         id: number,
       ): Promise<IpcResult<{ id: number; studentId: number; remainingLessons: number }>>;
       adjustLessons(input: LessonAdjustmentInput): Promise<IpcResult<CheckInResult>>;
+      export(query?: AttendanceListQuery): Promise<
+        IpcResult<{ filePath: string; detail: number; summary: number }>
+      >;
     };
   }
 

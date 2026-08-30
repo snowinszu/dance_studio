@@ -55,6 +55,7 @@ const CH = {
   attendanceCorrect: 'attendance:correct',
   attendanceVoid: 'attendance:void',
   attendanceAdjustLessons: 'attendance:adjustLessons',
+  attendanceExport: 'attendance:export',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -124,6 +125,7 @@ const api = {
     correct: (input: unknown) => invoke(CH.attendanceCorrect, input),
     voidRecord: (id: number) => invoke(CH.attendanceVoid, id),
     adjustLessons: (input: unknown) => invoke(CH.attendanceAdjustLessons, input),
+    export: (query?: unknown) => invoke(CH.attendanceExport, query),
   },
 };
 

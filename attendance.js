@@ -513,7 +513,12 @@ function renderListInto(container) {
         el('h1', { class: 'page-title', text: '考勤流水' }),
         el('p', { class: 'page-sub', text: '每一次打卡 / 请假 / 缺勤 / 课时调整都在这里留痕' }),
       ),
-      el('button', { class: 'btn', text: '调整课时', onclick: () => openAdjustModal() }),
+      el(
+        'div',
+        { style: 'display:flex;gap:10px' },
+        el('button', { class: 'btn', text: '调整课时', onclick: () => openAdjustModal() }),
+        el('button', { class: 'btn', text: '导出', onclick: () => exportRecordsFlow() }),
+      ),
     ),
     toolbar,
   );
@@ -577,6 +582,23 @@ async function reloadList() {
     await fetchList({});
     renderListInto(view);
   } catch (err) {
+    toast(err.message);
+  }
+}
+
+async function exportRecordsFlow() {
+  try {
+    const res = unwrap(
+      await shell.attendance.export({
+        dateFrom: listState.dateFrom || undefined,
+        dateTo: listState.dateTo || undefined,
+        keyword: listState.keyword.trim() || undefined,
+        type: listState.type || undefined,
+      }),
+    );
+    toast(`已导出 ${res.detail} 条明细 · ${res.summary} 行汇总`);
+  } catch (err) {
+    if (err.code === 'IO_CANCELLED') return;
     toast(err.message);
   }
 }
