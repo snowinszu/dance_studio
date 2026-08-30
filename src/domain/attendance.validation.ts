@@ -68,10 +68,18 @@ export interface RecordValues {
   reason: string | null;
   operator: string | null;
   note: string | null;
-  /** 本期恒 null */
+  /** 批量点名「选择课节」带来的关联 id；快速打卡 / 未选课节时为 null。不校验其是否存在。 */
   sessionId: number | null;
   force: boolean;
   allowDuplicate: boolean;
+}
+
+/** 归一化可选的 sessionId：空 → null；正整数 → number；其它 → 报错。 */
+function resolveSessionId(raw: unknown): { value: number | null } | { error: string } {
+  if (raw === undefined || raw === null || raw === '') return { value: null };
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+  if (!Number.isInteger(n) || n <= 0) return { error: '课节关联无效' };
+  return { value: n };
 }
 
 /**
@@ -218,6 +226,10 @@ export function validateBatchCheckIn(input: BatchCheckInInput): {
   const entries = Array.isArray(input.entries) ? input.entries : [];
   if (entries.length === 0) errors['entries'] = '请至少勾选一名学员';
 
+  const sid = resolveSessionId((input as { sessionId?: unknown }).sessionId);
+  if ('error' in sid) errors['sessionId'] = sid.error;
+  const sessionId = 'value' in sid ? sid.value : null;
+
   const force = Boolean(input.force);
   const allowDuplicate = Boolean(input.allowDuplicate);
 
@@ -249,7 +261,7 @@ export function validateBatchCheckIn(input: BatchCheckInInput): {
       reason: null,
       operator: common.operator,
       note: 'value' in note ? note.value : null,
-      sessionId: null,
+      sessionId,
       force,
       allowDuplicate,
     };

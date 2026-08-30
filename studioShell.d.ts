@@ -15,9 +15,18 @@ import type {
   BatchCheckInInput,
   BatchCheckInResult,
   CheckInResult,
+  ClassSchedule,
+  ClassScheduleInput,
+  ClassSessionInput,
+  ClassSessionListItem,
+  CourseClass,
+  CourseClassInput,
+  CourseClassListItem,
+  CourseClassListQuery,
   CustomFieldDef,
   CustomFieldInput,
   CustomFieldPatch,
+  GenerateMonthResult,
   ImportReport,
   InventoryImportReport,
   InventoryItem,
@@ -31,10 +40,21 @@ import type {
   QuickCheckInInput,
   RosterCandidate,
   RosterCandidateQuery,
+  RosterMember,
+  RosterMutationResult,
+  ScheduleMutationResult,
   SchemaGroup,
+  SessionDateItem,
+  SessionMonthQuery,
+  SessionMutationResult,
+  SessionUpdateInput,
   Student,
   StudentInput,
   Tag,
+  Teacher,
+  TeacherInput,
+  WeeklyTimetableEntry,
+  WeeklyTimetableQuery,
 } from './src/shared/types';
 
 declare global {
@@ -135,6 +155,48 @@ declare global {
         filePath: string;
         mapping: Record<string, string>;
       }): Promise<IpcResult<AttendanceImportReport>>;
+    };
+
+    course: {
+      teacherList(opts?: { includeInactive?: boolean }): Promise<IpcResult<Teacher[]>>;
+      teacherCreate(input: TeacherInput): Promise<IpcResult<Teacher>>;
+      teacherUpdate(id: number, input: TeacherInput): Promise<IpcResult<Teacher>>;
+      teacherDelete(id: number): Promise<IpcResult<{ id: number }>>;
+      classList(query?: CourseClassListQuery): Promise<IpcResult<CourseClassListItem[]>>;
+      classGet(id: number): Promise<IpcResult<CourseClassListItem>>;
+      classCreate(input: CourseClassInput): Promise<IpcResult<CourseClass>>;
+      classUpdate(id: number, input: CourseClassInput): Promise<IpcResult<CourseClass>>;
+      classDelete(id: number): Promise<IpcResult<{ id: number }>>;
+      rosterList(classId: number): Promise<IpcResult<RosterMember[]>>;
+      rosterAdd(input: {
+        classId: number;
+        studentId: number;
+        joinedAt?: string;
+      }): Promise<IpcResult<RosterMutationResult>>;
+      rosterRemove(input: {
+        classId: number;
+        studentId: number;
+        leftAt?: string;
+      }): Promise<IpcResult<RosterMutationResult>>;
+      scheduleList(classId: number): Promise<IpcResult<ClassSchedule[]>>;
+      scheduleCreate(input: ClassScheduleInput): Promise<IpcResult<ScheduleMutationResult>>;
+      scheduleUpdate(
+        id: number,
+        input: ClassScheduleInput,
+      ): Promise<IpcResult<ScheduleMutationResult>>;
+      scheduleDelete(id: number): Promise<IpcResult<{ id: number }>>;
+      weeklyTimetable(
+        query?: WeeklyTimetableQuery,
+      ): Promise<IpcResult<WeeklyTimetableEntry[]>>;
+      generateMonth(args: {
+        year: number;
+        month: number;
+      }): Promise<IpcResult<GenerateMonthResult>>;
+      sessionsByMonth(query: SessionMonthQuery): Promise<IpcResult<ClassSessionListItem[]>>;
+      sessionsByDate(args: { date: string }): Promise<IpcResult<SessionDateItem[]>>;
+      sessionCreate(input: ClassSessionInput): Promise<IpcResult<SessionMutationResult>>;
+      sessionUpdate(input: SessionUpdateInput): Promise<IpcResult<SessionMutationResult>>;
+      sessionDelete(id: number): Promise<IpcResult<{ id: number }>>;
     };
   }
 

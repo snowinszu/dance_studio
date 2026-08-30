@@ -61,6 +61,35 @@ export const CH = {
   attendanceDownloadTemplate: 'attendance:downloadTemplate',
   attendancePickImportFile: 'attendance:pickImportFile',
   attendanceImport: 'attendance:import',
+
+  // 课程管理 —— 老师 / 班级 / 花名册
+  courseTeacherList: 'course:teacherList',
+  courseTeacherCreate: 'course:teacherCreate',
+  courseTeacherUpdate: 'course:teacherUpdate',
+  courseTeacherDelete: 'course:teacherDelete',
+  courseClassList: 'course:classList',
+  courseClassGet: 'course:classGet',
+  courseClassCreate: 'course:classCreate',
+  courseClassUpdate: 'course:classUpdate',
+  courseClassDelete: 'course:classDelete',
+  courseRosterList: 'course:rosterList',
+  courseRosterAdd: 'course:rosterAdd',
+  courseRosterRemove: 'course:rosterRemove',
+
+  // 课程管理 —— 周期规则
+  courseScheduleList: 'course:scheduleList',
+  courseScheduleCreate: 'course:scheduleCreate',
+  courseScheduleUpdate: 'course:scheduleUpdate',
+  courseScheduleDelete: 'course:scheduleDelete',
+
+  // 课程管理 —— 课程表 / 排课
+  courseWeeklyTimetable: 'course:weeklyTimetable',
+  courseGenerateMonth: 'course:generateMonth',
+  courseSessionsByMonth: 'course:sessionsByMonth',
+  courseSessionsByDate: 'course:sessionsByDate',
+  courseSessionCreate: 'course:sessionCreate',
+  courseSessionUpdate: 'course:sessionUpdate',
+  courseSessionDelete: 'course:sessionDelete',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

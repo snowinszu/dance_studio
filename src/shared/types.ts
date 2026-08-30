@@ -283,7 +283,24 @@ export type IpcErrorCode =
   /** 同学员 + 日期 + 课程 + 类型 已有未撤销记录，且未允许重复 */
   | 'DUPLICATE_ATTENDANCE'
   /** 手动调整课时的增减数为 0 或非整数 */
-  | 'INVALID_ADJUSTMENT';
+  | 'INVALID_ADJUSTMENT'
+  // —— 课程管理 ——
+  /** teacher_id 不存在 */
+  | 'TEACHER_NOT_FOUND'
+  /** class_id 不存在或已软删 */
+  | 'CLASS_NOT_FOUND'
+  /** 周期规则不存在或已软删 */
+  | 'SCHEDULE_NOT_FOUND'
+  /** 排课实例不存在或已软删 */
+  | 'SESSION_NOT_FOUND'
+  /** 该学员在该班已有在册记录 */
+  | 'STUDENT_ALREADY_IN_CLASS'
+  /** 同班同日同开始时间已有未软删课节 */
+  | 'DUPLICATE_SESSION'
+  /** 时间格式非法或 end_time <= start_time */
+  | 'INVALID_TIME_RANGE'
+  /** weekday 非 0–6 整数 */
+  | 'INVALID_WEEKDAY';
 
 // ===========================================================================
 // 库存管理模块
@@ -435,7 +452,7 @@ export interface AttendanceRecord {
   studentId: number;
   studentName: string;
   studentPhone: string;
-  /** 预留关联「课程安排」，本期恒 null */
+  /** 关联的课节 id（course.class_sessions）；快速打卡或未选课节的批量点名为 null。逻辑关联、无外键 */
   sessionId: number | null;
   className: string | null;
   teacher: string | null;
@@ -498,6 +515,11 @@ export interface BatchCheckInInput {
   operator?: string | null;
   force?: boolean;
   allowDuplicate?: boolean;
+  /**
+   * 课程管理上线后：批量点名关联的课节 id（course:sessionsByDate 选中的那节）。
+   * 给出则每条流水回填 attendance_records.session_id；省略 → null，行为不变。
+   */
+  sessionId?: number | null;
   entries: BatchCheckInEntry[];
 }
 
@@ -620,4 +642,272 @@ export interface AttendanceImportReport {
   negativeBalance: number;
   /** row = xlsx 行号（含表头，从 2 起） */
   failures: { row: number; reason: string }[];
+}
+
+// ===========================================================================
+// 课程管理模块
+// ===========================================================================
+//
+// 两个视图、一份数据：
+// - 「课程表」（学生向）读周期规则 ClassSchedule——不带日期的星期模板。
+// - 「上课时间计划表」（老师向）读排课实例 ClassSession——真实日期，由 generateMonth 按规则物化。
+// 显示用的班名 / 老师名一律 JOIN 取（不快照）；ClassSession.teacherId 是「这天谁上」的权威，可被代课改写。
+
+export type TeacherStatus = '在职' | '离职';
+export type ClassStatus = '在读' | '停课' | '结课';
+export type SessionStatus = '正常' | '停课';
+export type SessionOrigin = '计划' | '手动';
+export type SessionUpdateAction = '停课' | '恢复' | '改时间' | '换老师';
+
+/** 一位老师。轻量字典：只有姓名 + 状态两个业务字段。 */
+export interface Teacher {
+  id: number;
+  name: string;
+  status: TeacherStatus;
+  createdAt: string;
+  updatedAt: string;
+  /** 非 null 即已软删：历史 JOIN 仍带出姓名 */
+  deletedAt: string | null;
+}
+
+export interface TeacherInput {
+  name: string;
+  /** 省略 → '在职' */
+  status?: TeacherStatus;
+}
+
+/** 一个班级。teacherName 由 JOIN teachers 得到（含已软删老师）。 */
+export interface CourseClass {
+  id: number;
+  name: string;
+  danceType: string;
+  level: string | null;
+  teacherId: number | null;
+  teacherName: string | null;
+  room: string | null;
+  capacity: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: ClassStatus;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface CourseClassInput {
+  name: string;
+  danceType: string;
+  level?: string | null;
+  teacherId?: number | null;
+  room?: string | null;
+  capacity?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  /** 省略 → '在读' */
+  status?: ClassStatus;
+  note?: string | null;
+}
+
+/** 班级列表 / 详情：带在册人数与是否超容量。 */
+export interface CourseClassListItem extends CourseClass {
+  /** class_students 中 left_at IS NULL 的计数 */
+  activeRosterCount: number;
+  /** capacity != null && activeRosterCount > capacity */
+  overCapacity: boolean;
+}
+
+export interface CourseClassListQuery {
+  status?: ClassStatus;
+  danceType?: string;
+  teacherId?: number;
+  /** 班名子串 */
+  keyword?: string;
+}
+
+/** 花名册里的一名在册学员（JOIN students）。 */
+export interface RosterMember {
+  studentId: number;
+  name: string;
+  phone: string;
+  remainingLessons: number | null;
+  cardExpireDate: string | null;
+  joinedAt: string;
+}
+
+export interface RosterAddInput {
+  classId: number;
+  studentId: number;
+  /** 省略 → 今天 */
+  joinedAt?: string;
+}
+
+export interface RosterRemoveInput {
+  classId: number;
+  studentId: number;
+  /** 省略 → 今天 */
+  leftAt?: string;
+}
+
+export interface RosterMutationResult {
+  classId: number;
+  activeRosterCount: number;
+  overCapacity: boolean;
+}
+
+/** 一条周期规则。effective* 是生效老师 / 教室（COALESCE 覆盖值与班默认值）。 */
+export interface ClassSchedule {
+  id: number;
+  classId: number;
+  /** 0=周日 … 6=周六 */
+  weekday: number;
+  /** 'HH:MM' */
+  startTime: string;
+  endTime: string;
+  /** 覆盖值 */
+  teacherId: number | null;
+  /** 覆盖值 */
+  room: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  /** COALESCE(schedule.teacherId, class.teacherId) */
+  effectiveTeacherId: number | null;
+  effectiveTeacherName: string | null;
+  effectiveRoom: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface ClassScheduleInput {
+  classId: number;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  teacherId?: number | null;
+  room?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+}
+
+/** 一条排课冲突（老师或教室在同一时段被排两次）。非阻断，仅提示。 */
+export interface ScheduleConflict {
+  kind: '老师' | '教室';
+  refType: '规则' | '课节';
+  refId: number;
+  /** 冲突对象的班名 */
+  label: string;
+  /** 规则 → String(weekday)；课节 → 'YYYY-MM-DD' */
+  weekdayOrDate: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface ScheduleMutationResult {
+  schedule: ClassSchedule;
+  /** 非阻断：即使非空，规则也已落库 */
+  conflicts: ScheduleConflict[];
+}
+
+export interface WeeklyTimetableQuery {
+  danceType?: string;
+  teacherId?: number;
+}
+
+/** 「课程表」周视图的一格：某班某条规则。 */
+export interface WeeklyTimetableEntry {
+  scheduleId: number;
+  classId: number;
+  className: string;
+  danceType: string;
+  level: string | null;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  /** 生效老师 */
+  teacherId: number | null;
+  teacherName: string | null;
+  /** 生效教室 */
+  room: string | null;
+  activeRosterCount: number;
+}
+
+/** 一条排课实例。className / teacherName 由 JOIN 得到（见 ClassSessionListItem）。 */
+export interface ClassSession {
+  id: number;
+  classId: number;
+  scheduleId: number | null;
+  /** 'YYYY-MM-DD' */
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  teacherId: number | null;
+  room: string | null;
+  status: SessionStatus;
+  origin: SessionOrigin;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface ClassSessionListItem extends ClassSession {
+  className: string;
+  danceType: string;
+  teacherName: string | null;
+}
+
+export interface SessionMonthQuery {
+  teacherId?: number;
+  year: number;
+  /** 1–12 */
+  month: number;
+}
+
+/** 考勤「选择课节」列出某日课节用。 */
+export interface SessionDateItem {
+  id: number;
+  classId: number;
+  className: string;
+  teacherId: number | null;
+  teacherName: string | null;
+  startTime: string;
+  endTime: string;
+  status: SessionStatus;
+  activeRosterCount: number;
+}
+
+/** 手动加课的入参。 */
+export interface ClassSessionInput {
+  classId: number;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  teacherId?: number | null;
+  room?: string | null;
+  note?: string | null;
+}
+
+export interface SessionUpdateInput {
+  id: number;
+  action: SessionUpdateAction;
+  /** action='改时间' 必填 */
+  startTime?: string;
+  /** action='改时间' 必填 */
+  endTime?: string;
+  /** action='换老师'：给出 → 指派；null → 取消指派 */
+  teacherId?: number | null;
+  /** action='停课' 可带 */
+  note?: string | null;
+}
+
+export interface SessionMutationResult {
+  session: ClassSessionListItem;
+  /** 非阻断；action ∈ {改时间,换老师} 或手动加课时才可能非空 */
+  conflicts: ScheduleConflict[];
+}
+
+export interface GenerateMonthResult {
+  /** 本次新物化的实例数 */
+  created: number;
 }
