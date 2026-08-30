@@ -8,6 +8,11 @@ import type {
   AllocationInput,
   AllocationListQuery,
   AllocationListResult,
+  AttendanceListQuery,
+  AttendanceListResult,
+  BatchCheckInInput,
+  BatchCheckInResult,
+  CheckInResult,
   CustomFieldDef,
   CustomFieldInput,
   CustomFieldPatch,
@@ -20,6 +25,9 @@ import type {
   IpcResult,
   ListQuery,
   ListResult,
+  QuickCheckInInput,
+  RosterCandidate,
+  RosterCandidateQuery,
   SchemaGroup,
   Student,
   StudentInput,
@@ -99,6 +107,15 @@ declare global {
         filePath: string;
         mapping: Record<string, string>;
       }): Promise<IpcResult<InventoryImportReport>>;
+    };
+
+    attendance: {
+      list(query?: AttendanceListQuery): Promise<IpcResult<AttendanceListResult>>;
+      quickCheckIn(input: QuickCheckInInput): Promise<IpcResult<CheckInResult>>;
+      batchCheckIn(input: BatchCheckInInput): Promise<IpcResult<BatchCheckInResult>>;
+      rosterCandidates(
+        query?: RosterCandidateQuery,
+      ): Promise<IpcResult<RosterCandidate[]>>;
     };
   }
 

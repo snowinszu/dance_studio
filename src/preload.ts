@@ -48,6 +48,10 @@ const CH = {
   inventoryDownloadTemplate: 'inventory:downloadTemplate',
   inventoryPickImportFile: 'inventory:pickImportFile',
   inventoryImportItems: 'inventory:importItems',
+  attendanceList: 'attendance:list',
+  attendanceQuickCheckIn: 'attendance:quickCheckIn',
+  attendanceBatchCheckIn: 'attendance:batchCheckIn',
+  attendanceRosterCandidates: 'attendance:rosterCandidates',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -107,6 +111,13 @@ const api = {
     downloadTemplate: () => invoke(CH.inventoryDownloadTemplate),
     pickImportFile: () => invoke(CH.inventoryPickImportFile),
     importItems: (args: unknown) => invoke(CH.inventoryImportItems, args),
+  },
+
+  attendance: {
+    list: (query?: unknown) => invoke(CH.attendanceList, query),
+    quickCheckIn: (input: unknown) => invoke(CH.attendanceQuickCheckIn, input),
+    batchCheckIn: (input: unknown) => invoke(CH.attendanceBatchCheckIn, input),
+    rosterCandidates: (query?: unknown) => invoke(CH.attendanceRosterCandidates, query),
   },
 };
 

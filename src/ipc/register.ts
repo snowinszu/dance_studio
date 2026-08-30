@@ -9,15 +9,20 @@ import { dialog, ipcMain } from 'electron';
 import type {
   AllocationInput,
   AllocationListQuery,
+  AttendanceListQuery,
+  BatchCheckInInput,
   CustomFieldInput,
   CustomFieldPatch,
   InventoryItemInput,
   InventoryListQuery,
   IpcResult,
   ListQuery,
+  QuickCheckInInput,
+  RosterCandidateQuery,
   StudentInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
+import { validateBatchCheckIn, validateQuickCheckIn } from '../domain/attendance.validation';
 import {
   buildItemTemplate,
   exportAllocations,
@@ -32,6 +37,7 @@ import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
 import * as inventoryRepo from '../domain/inventory.repo';
+import * as attendanceRepo from '../domain/attendance.repo';
 import { buildSchema, validateStudent } from '../domain/validation';
 import { exportStudents } from '../io/export-xlsx';
 import { buildTemplate, importStudents, readImportPreview } from '../io/import-xlsx';
@@ -295,4 +301,33 @@ export function registerIpc(): void {
       return importItems({ filePath: args.filePath, mapping: args.mapping ?? {} });
     },
   );
+
+  // —— 考勤管理 ——
+  handle(CH.attendanceList, (query?: AttendanceListQuery) =>
+    attendanceRepo.listRecords(query ?? {}),
+  );
+
+  handle(CH.attendanceRosterCandidates, (query?: RosterCandidateQuery) =>
+    attendanceRepo.listRosterCandidates(query ?? {}),
+  );
+
+  handle(CH.attendanceQuickCheckIn, (input?: QuickCheckInInput) => {
+    const { values, errors } = validateQuickCheckIn(input ?? ({} as QuickCheckInInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.createRecord(values);
+  });
+
+  handle(CH.attendanceBatchCheckIn, (input?: BatchCheckInInput) => {
+    const p = input ?? ({} as BatchCheckInInput);
+    if (!Array.isArray(p.entries) || p.entries.length === 0) {
+      throw new AppError('BAD_REQUEST', '请至少勾选一名学员');
+    }
+    const { values, errors } = validateBatchCheckIn(p);
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查点名信息', errors);
+    }
+    return attendanceRepo.batchCreate(values);
+  });
 }
