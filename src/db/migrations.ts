@@ -224,14 +224,134 @@ const v5 = (db: Database): void => {
 };
 
 /**
+ * v6：课程管理模块的初始表结构（5 张表）。
+ *
+ * 版本号说明：v3 被并行的「学员班级字段」分支占用、v4 是库存、v5 是考勤，课程认领下一个空号 v6。
+ * 对停在 v2 / v4 / v5 的库，run() 只看 version > current，会把缺的版本按序补齐——允许版本号有空档。
+ * DDL 一律 IF NOT EXISTS：历史原因重复触发也不炸。
+ * 合并顺序建议：feat/inventory-management(v4) → feat/attendance-management(v5) → 本分支(v6)。
+ *
+ * 「规则」与「实例」分开建模，是本模块的核心：
+ * - class_schedules 是**周期规则**（每周几、几点、哪个班），不带具体日期，无限重复——「课程表」读它。
+ * - class_sessions 是**排课实例**（某个真实日期的一节课），由 generateMonth 按规则幂等物化到当月，
+ *   之后可逐日微调（停课 / 改时间 / 换代课老师）——「上课时间计划表」读它。
+ *   改规则不追溯已生成的实例。
+ *
+ * 其余约定沿用前三个模块：
+ * - 一律软删（deleted_at），不写 ON DELETE CASCADE：老师 / 学员 / 班级删了也要能在历史里查到。
+ *   连接级 PRAGMA foreign_keys=ON（见 connection.ts）下，这里的外键只保证「插入时被引用行必须存在」。
+ * - 日期存 'YYYY-MM-DD'、时间存 'HH:MM'，字典序即时间序。
+ * - weekday 存整数 0–6（0=周日），对齐 JS Date.getDay()，渲染层零偏移换算。
+ * - 不加 CHECK：weekday 范围、end_time > start_time、各枚举取值由 domain 校验层把关，
+ *   和 students.status / attendance_records.type 无 CHECK 的现状一致。
+ *
+ * class_students 的部分唯一索引 (class_id, student_id) WHERE left_at IS NULL：
+ *   同一学员在同一班「同时」只能有一条在册记录；离班后（left_at 非空）可再入班。
+ * class_sessions 的部分唯一索引 (class_id, session_date, start_time) WHERE deleted_at IS NULL：
+ *   同班同日同开始时间只允许一节未软删课。generateMonth 的幂等靠「先 SELECT 存在性再 INSERT」，
+ *   不靠捕获这个索引冲突（better-sqlite3 同步 + 单连接，事务内无并发写者）。
+ */
+const v6 = (db: Database): void => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS teachers (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT '在职',      -- 在职 | 离职（校验层把关）
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      deleted_at  TEXT                                -- 非空即已软删
+    );
+    CREATE INDEX IF NOT EXISTS idx_teachers_status  ON teachers(status);
+    CREATE INDEX IF NOT EXISTS idx_teachers_deleted ON teachers(deleted_at);
+
+    CREATE TABLE IF NOT EXISTS classes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT NOT NULL,
+      dance_type  TEXT NOT NULL,
+      level       TEXT,
+      teacher_id  INTEGER REFERENCES teachers(id),   -- 主教；可空；无级联
+      room        TEXT,
+      capacity    INTEGER,                            -- 可空；正整数（校验层）
+      start_date  TEXT,                               -- 'YYYY-MM-DD'，可空
+      end_date    TEXT,
+      status      TEXT NOT NULL DEFAULT '在读',        -- 在读 | 停课 | 结课
+      note        TEXT,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      deleted_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_classes_status  ON classes(status);
+    CREATE INDEX IF NOT EXISTS idx_classes_dance   ON classes(dance_type);
+    CREATE INDEX IF NOT EXISTS idx_classes_teacher ON classes(teacher_id);
+    CREATE INDEX IF NOT EXISTS idx_classes_deleted ON classes(deleted_at);
+
+    CREATE TABLE IF NOT EXISTS class_students (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id    INTEGER NOT NULL REFERENCES classes(id),
+      student_id  INTEGER NOT NULL REFERENCES students(id),
+      joined_at   TEXT NOT NULL,                      -- 'YYYY-MM-DD'
+      left_at     TEXT,                               -- 非空即已离班
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cs_class   ON class_students(class_id);
+    CREATE INDEX IF NOT EXISTS idx_cs_student ON class_students(student_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_class_student_active
+      ON class_students(class_id, student_id) WHERE left_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS class_schedules (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id       INTEGER NOT NULL REFERENCES classes(id),
+      weekday        INTEGER NOT NULL,                -- 0=周日 … 6=周六（对齐 Date.getDay()）
+      start_time     TEXT NOT NULL,                   -- 'HH:MM'
+      end_time       TEXT NOT NULL,                   -- 'HH:MM'，> start_time（校验层）
+      teacher_id     INTEGER REFERENCES teachers(id), -- 覆盖班主教；可空
+      room           TEXT,                            -- 覆盖班教室；可空
+      effective_from TEXT,                            -- 'YYYY-MM-DD'，可空；本期 UI 不暴露
+      effective_to   TEXT,                            -- 可空；本期 UI 不暴露
+      created_at     TEXT NOT NULL,
+      updated_at     TEXT NOT NULL,
+      deleted_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sch_class   ON class_schedules(class_id);
+    CREATE INDEX IF NOT EXISTS idx_sch_weekday ON class_schedules(weekday);
+    CREATE INDEX IF NOT EXISTS idx_sch_deleted ON class_schedules(deleted_at);
+
+    CREATE TABLE IF NOT EXISTS class_sessions (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      class_id     INTEGER NOT NULL REFERENCES classes(id),
+      schedule_id  INTEGER REFERENCES class_schedules(id),  -- 计划实例指向来源规则；手动加课为 NULL
+      session_date TEXT NOT NULL,                            -- 'YYYY-MM-DD'
+      start_time   TEXT NOT NULL,                            -- 'HH:MM'
+      end_time     TEXT NOT NULL,
+      teacher_id   INTEGER REFERENCES teachers(id),          -- 这一天谁上（生成时取生效老师，之后可改=代课）
+      room         TEXT,
+      status       TEXT NOT NULL DEFAULT '正常',              -- 正常 | 停课
+      origin       TEXT NOT NULL,                             -- 计划 | 手动
+      note         TEXT,
+      created_at   TEXT NOT NULL,
+      updated_at   TEXT NOT NULL,
+      deleted_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sess_class   ON class_sessions(class_id);
+    CREATE INDEX IF NOT EXISTS idx_sess_date    ON class_sessions(session_date);
+    CREATE INDEX IF NOT EXISTS idx_sess_teacher ON class_sessions(teacher_id);
+    CREATE INDEX IF NOT EXISTS idx_sess_deleted ON class_sessions(deleted_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_sess_slot
+      ON class_sessions(class_id, session_date, start_time) WHERE deleted_at IS NULL;
+  `);
+};
+
+/**
  * 全部迁移，按 version 升序。新增结构变更时往末尾追加。
- * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4 → 5，见各版注释）。
+ * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4 → 5 → 6，见各版注释）。
  */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
   { version: 2, up: v2 },
   { version: 4, up: v4 },
   { version: 5, up: v5 },
+  { version: 6, up: v6 },
 ];
 
 /** 当前代码期望的最高版本号。 */
