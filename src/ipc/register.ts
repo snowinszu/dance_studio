@@ -12,6 +12,7 @@ import type {
   AttendanceCorrectionInput,
   AttendanceListQuery,
   BatchCheckInInput,
+  ClassScheduleInput,
   CourseClassInput,
   CourseClassListQuery,
   CustomFieldInput,
@@ -61,6 +62,7 @@ import {
   validateClass,
   validateRosterAdd,
   validateRosterRemove,
+  validateSchedule,
   validateTeacher,
 } from '../domain/course.validation';
 import { buildSchema, validateStudent } from '../domain/validation';
@@ -498,5 +500,36 @@ export function registerIpc(): void {
       throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
     }
     return courseRepo.rosterRemove(values);
+  });
+
+  // —— 课程管理：周期规则 ——
+  handle(CH.courseScheduleList, (classId?: number) => {
+    if (!Number.isFinite(Number(classId))) throw new AppError('BAD_REQUEST', '缺少班级 id');
+    return courseRepo.scheduleList(Number(classId));
+  });
+
+  /** 校验 → 分流 INVALID_WEEKDAY / INVALID_TIME_RANGE / VALIDATION_FAILED；否则落库。 */
+  const checkedSchedule = (input: ClassScheduleInput) => {
+    const { values, errors, weekdayError, timeError } = validateSchedule(input);
+    if (weekdayError) throw new AppError('INVALID_WEEKDAY', weekdayError, { weekday: weekdayError });
+    if (timeError) throw new AppError('INVALID_TIME_RANGE', timeError, { endTime: timeError });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return values;
+  };
+
+  handle(CH.courseScheduleCreate, (input?: ClassScheduleInput) =>
+    courseRepo.scheduleCreate(checkedSchedule(input ?? ({} as ClassScheduleInput))),
+  );
+
+  handle(CH.courseScheduleUpdate, (id?: number, input?: ClassScheduleInput) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少规则 id');
+    return courseRepo.scheduleUpdate(Number(id), checkedSchedule(input ?? ({} as ClassScheduleInput)));
+  });
+
+  handle(CH.courseScheduleDelete, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少规则 id');
+    return courseRepo.scheduleSoftDelete(Number(id));
   });
 }

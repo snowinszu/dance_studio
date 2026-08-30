@@ -75,6 +75,12 @@ export const CH = {
   courseRosterList: 'course:rosterList',
   courseRosterAdd: 'course:rosterAdd',
   courseRosterRemove: 'course:rosterRemove',
+
+  // 课程管理 —— 周期规则
+  courseScheduleList: 'course:scheduleList',
+  courseScheduleCreate: 'course:scheduleCreate',
+  courseScheduleUpdate: 'course:scheduleUpdate',
+  courseScheduleDelete: 'course:scheduleDelete',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

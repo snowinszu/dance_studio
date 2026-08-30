@@ -15,6 +15,8 @@ import type {
   BatchCheckInInput,
   BatchCheckInResult,
   CheckInResult,
+  ClassSchedule,
+  ClassScheduleInput,
   CourseClass,
   CourseClassInput,
   CourseClassListItem,
@@ -37,6 +39,7 @@ import type {
   RosterCandidateQuery,
   RosterMember,
   RosterMutationResult,
+  ScheduleMutationResult,
   SchemaGroup,
   Student,
   StudentInput,
@@ -166,6 +169,13 @@ declare global {
         studentId: number;
         leftAt?: string;
       }): Promise<IpcResult<RosterMutationResult>>;
+      scheduleList(classId: number): Promise<IpcResult<ClassSchedule[]>>;
+      scheduleCreate(input: ClassScheduleInput): Promise<IpcResult<ScheduleMutationResult>>;
+      scheduleUpdate(
+        id: number,
+        input: ClassScheduleInput,
+      ): Promise<IpcResult<ScheduleMutationResult>>;
+      scheduleDelete(id: number): Promise<IpcResult<{ id: number }>>;
     };
   }
 

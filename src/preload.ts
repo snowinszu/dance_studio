@@ -71,6 +71,10 @@ const CH = {
   courseRosterList: 'course:rosterList',
   courseRosterAdd: 'course:rosterAdd',
   courseRosterRemove: 'course:rosterRemove',
+  courseScheduleList: 'course:scheduleList',
+  courseScheduleCreate: 'course:scheduleCreate',
+  courseScheduleUpdate: 'course:scheduleUpdate',
+  courseScheduleDelete: 'course:scheduleDelete',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -159,6 +163,10 @@ const api = {
     rosterList: (classId: number) => invoke(CH.courseRosterList, classId),
     rosterAdd: (input: unknown) => invoke(CH.courseRosterAdd, input),
     rosterRemove: (input: unknown) => invoke(CH.courseRosterRemove, input),
+    scheduleList: (classId: number) => invoke(CH.courseScheduleList, classId),
+    scheduleCreate: (input: unknown) => invoke(CH.courseScheduleCreate, input),
+    scheduleUpdate: (id: number, input: unknown) => invoke(CH.courseScheduleUpdate, id, input),
+    scheduleDelete: (id: number) => invoke(CH.courseScheduleDelete, id),
   },
 };
 

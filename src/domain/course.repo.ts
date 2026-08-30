@@ -13,19 +13,23 @@
 import { getDb } from '../db/connection';
 import { AppError } from '../shared/app-error';
 import type {
+  ClassSchedule,
   CourseClass,
   CourseClassListItem,
   CourseClassListQuery,
   RosterMember,
   RosterMutationResult,
+  ScheduleConflict,
   Teacher,
 } from '../shared/types';
 import type {
   ClassValues,
   RosterAddValues,
   RosterRemoveValues,
+  ScheduleValues,
   TeacherValues,
 } from './course.validation';
+import { overlaps, rangeOverlaps } from './course.validation';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -336,4 +340,197 @@ export function rosterRemove(values: RosterRemoveValues): RosterMutationResult {
     });
   if (upd.changes === 0) throw new AppError('NOT_FOUND', '该学员不在此班在册');
   return rosterResult(values.classId, cls);
+}
+
+/* ═══════════════════════════ 周期规则 ═══════════════════════════ */
+
+/** SELECT 列 → ClassSchedule 的映射，带生效老师 / 教室（COALESCE 覆盖值与班默认值）。 */
+const SCHEDULE_SELECT = `
+  SELECT sch.id, sch.class_id AS classId, sch.weekday,
+         sch.start_time AS startTime, sch.end_time AS endTime,
+         sch.teacher_id AS teacherId, sch.room,
+         sch.effective_from AS effectiveFrom, sch.effective_to AS effectiveTo,
+         COALESCE(sch.teacher_id, c.teacher_id)              AS effectiveTeacherId,
+         t.name                                              AS effectiveTeacherName,
+         COALESCE(NULLIF(sch.room, ''), c.room)              AS effectiveRoom,
+         sch.created_at AS createdAt, sch.updated_at AS updatedAt, sch.deleted_at AS deletedAt
+    FROM class_schedules sch
+    JOIN classes c ON c.id = sch.class_id
+    LEFT JOIN teachers t ON t.id = COALESCE(sch.teacher_id, c.teacher_id)
+`;
+
+function getScheduleRow(id: number): ClassSchedule | undefined {
+  return getDb().prepare(`${SCHEDULE_SELECT} WHERE sch.id = ?`).get(id) as ClassSchedule | undefined;
+}
+
+/** 某班的未软删周期规则，按 weekday, start_time 排。 */
+export function scheduleList(classId: number): ClassSchedule[] {
+  assertClassExists(classId);
+  return getDb()
+    .prepare(
+      `${SCHEDULE_SELECT} WHERE sch.class_id = ? AND sch.deleted_at IS NULL
+        ORDER BY sch.weekday, sch.start_time`,
+    )
+    .all(classId) as ClassSchedule[];
+}
+
+/**
+ * 扫描所有未软删周期规则，找与候选规则冲突的：
+ * 同 weekday + 时段重叠 + 生效区间相交 + （生效老师相同 → kind:'老师' | 生效教室相同且非空 → kind:'教室'）。
+ * 非阻断——调用方把结果放进返回值即可。
+ */
+export function checkScheduleConflicts(candidate: {
+  excludeScheduleId?: number;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  effectiveTeacherId: number | null;
+  effectiveRoom: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}): ScheduleConflict[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT sch.id, sch.weekday, sch.start_time AS startTime, sch.end_time AS endTime,
+              sch.effective_from AS effectiveFrom, sch.effective_to AS effectiveTo,
+              COALESCE(sch.teacher_id, c.teacher_id)         AS effTeacherId,
+              COALESCE(NULLIF(sch.room, ''), c.room)          AS effRoom,
+              c.name AS className
+         FROM class_schedules sch
+         JOIN classes c ON c.id = sch.class_id
+        WHERE sch.deleted_at IS NULL AND c.deleted_at IS NULL AND sch.weekday = @weekday`,
+    )
+    .all({ weekday: candidate.weekday }) as {
+    id: number;
+    startTime: string;
+    endTime: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    effTeacherId: number | null;
+    effRoom: string | null;
+    className: string;
+  }[];
+
+  const out: ScheduleConflict[] = [];
+  const room = (candidate.effectiveRoom ?? '').trim();
+  for (const r of rows) {
+    if (candidate.excludeScheduleId != null && r.id === candidate.excludeScheduleId) continue;
+    if (!overlaps(candidate.startTime, candidate.endTime, r.startTime, r.endTime)) continue;
+    if (
+      !rangeOverlaps(candidate.effectiveFrom, candidate.effectiveTo, r.effectiveFrom, r.effectiveTo)
+    ) {
+      continue;
+    }
+    const sameTeacher =
+      candidate.effectiveTeacherId != null && r.effTeacherId === candidate.effectiveTeacherId;
+    const sameRoom = room.length > 0 && (r.effRoom ?? '').trim() === room;
+    if (sameTeacher) {
+      out.push({
+        kind: '老师',
+        refType: '规则',
+        refId: r.id,
+        label: r.className,
+        weekdayOrDate: String(candidate.weekday),
+        startTime: r.startTime,
+        endTime: r.endTime,
+      });
+    } else if (sameRoom) {
+      out.push({
+        kind: '教室',
+        refType: '规则',
+        refId: r.id,
+        label: r.className,
+        weekdayOrDate: String(candidate.weekday),
+        startTime: r.startTime,
+        endTime: r.endTime,
+      });
+    }
+  }
+  return out;
+}
+
+/** 一条规则的「生效老师 / 教室 / 生效区间」（用于冲突扫描）。 */
+function effectiveOf(s: ClassSchedule): {
+  effectiveTeacherId: number | null;
+  effectiveRoom: string | null;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+} {
+  return {
+    effectiveTeacherId: s.effectiveTeacherId,
+    effectiveRoom: s.effectiveRoom,
+    effectiveFrom: s.effectiveFrom,
+    effectiveTo: s.effectiveTo,
+  };
+}
+
+export function scheduleCreate(values: ScheduleValues): {
+  schedule: ClassSchedule;
+  conflicts: ScheduleConflict[];
+} {
+  assertClassExists(values.classId);
+  if (values.teacherId != null) assertTeacherExists(values.teacherId);
+  const ts = nowIso();
+  const info = getDb()
+    .prepare(
+      `INSERT INTO class_schedules
+         (class_id, weekday, start_time, end_time, teacher_id, room,
+          effective_from, effective_to, created_at, updated_at)
+       VALUES
+         (@classId, @weekday, @startTime, @endTime, @teacherId, @room,
+          @effectiveFrom, @effectiveTo, @ts, @ts)`,
+    )
+    .run({ ...values, ts });
+  const schedule = getScheduleRow(Number(info.lastInsertRowid))!;
+  const conflicts = checkScheduleConflicts({
+    excludeScheduleId: schedule.id,
+    weekday: schedule.weekday,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    ...effectiveOf(schedule),
+  });
+  return { schedule, conflicts };
+}
+
+export function scheduleUpdate(
+  id: number,
+  values: ScheduleValues,
+): { schedule: ClassSchedule; conflicts: ScheduleConflict[] } {
+  const db = getDb();
+  const cur = db
+    .prepare(`SELECT id FROM class_schedules WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!cur) throw new AppError('SCHEDULE_NOT_FOUND', '该周期规则不存在');
+  if (values.teacherId != null) assertTeacherExists(values.teacherId);
+  db.prepare(
+    `UPDATE class_schedules SET
+       weekday = @weekday, start_time = @startTime, end_time = @endTime,
+       teacher_id = @teacherId, room = @room,
+       effective_from = @effectiveFrom, effective_to = @effectiveTo, updated_at = @ts
+     WHERE id = @id`,
+  ).run({ ...values, id, ts: nowIso() });
+  const schedule = getScheduleRow(id)!;
+  const conflicts = checkScheduleConflicts({
+    excludeScheduleId: id,
+    weekday: schedule.weekday,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    ...effectiveOf(schedule),
+  });
+  return { schedule, conflicts };
+}
+
+/** 软删一条规则。不追溯已生成的排课实例。 */
+export function scheduleSoftDelete(id: number): { id: number } {
+  const db = getDb();
+  const cur = db
+    .prepare(`SELECT id FROM class_schedules WHERE id = ? AND deleted_at IS NULL`)
+    .get(id);
+  if (!cur) throw new AppError('SCHEDULE_NOT_FOUND', '该周期规则不存在');
+  const ts = nowIso();
+  db.prepare(`UPDATE class_schedules SET deleted_at = @ts, updated_at = @ts WHERE id = @id`).run({
+    ts,
+    id,
+  });
+  return { id };
 }
