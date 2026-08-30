@@ -56,6 +56,9 @@ const CH = {
   attendanceVoid: 'attendance:void',
   attendanceAdjustLessons: 'attendance:adjustLessons',
   attendanceExport: 'attendance:export',
+  attendanceDownloadTemplate: 'attendance:downloadTemplate',
+  attendancePickImportFile: 'attendance:pickImportFile',
+  attendanceImport: 'attendance:import',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -126,6 +129,9 @@ const api = {
     voidRecord: (id: number) => invoke(CH.attendanceVoid, id),
     adjustLessons: (input: unknown) => invoke(CH.attendanceAdjustLessons, input),
     export: (query?: unknown) => invoke(CH.attendanceExport, query),
+    downloadTemplate: () => invoke(CH.attendanceDownloadTemplate),
+    pickImportFile: () => invoke(CH.attendancePickImportFile),
+    import: (args: unknown) => invoke(CH.attendanceImport, args),
   },
 };
 

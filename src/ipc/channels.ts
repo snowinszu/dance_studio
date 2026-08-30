@@ -58,6 +58,9 @@ export const CH = {
   attendanceVoid: 'attendance:void',
   attendanceAdjustLessons: 'attendance:adjustLessons',
   attendanceExport: 'attendance:export',
+  attendanceDownloadTemplate: 'attendance:downloadTemplate',
+  attendancePickImportFile: 'attendance:pickImportFile',
+  attendanceImport: 'attendance:import',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

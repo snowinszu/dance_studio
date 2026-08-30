@@ -37,7 +37,12 @@ import {
   importItems,
   readItemsPreview,
 } from '../io/inventory-xlsx';
-import { exportRecords } from '../io/attendance-xlsx';
+import {
+  buildTemplate as buildAttendanceTemplate,
+  exportRecords,
+  importRecords,
+  readImportPreview as readAttendanceImportPreview,
+} from '../io/attendance-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
@@ -377,4 +382,30 @@ export function registerIpc(): void {
       );
     }
   });
+
+  handle(CH.attendanceDownloadTemplate, async () => {
+    const filePath = await pickSavePath('下载考勤导入模板', '考勤导入模板.xlsx');
+    try {
+      await buildAttendanceTemplate(filePath);
+      return { filePath };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.attendancePickImportFile, async () => {
+    const filePath = await pickOpenPath('选择要导入的 Excel');
+    return readAttendanceImportPreview(filePath);
+  });
+
+  handle(
+    CH.attendanceImport,
+    (args?: { filePath?: string; mapping?: Record<string, string> }) => {
+      if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
+      return importRecords({ filePath: args.filePath, mapping: args.mapping ?? {} });
+    },
+  );
 }

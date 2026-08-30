@@ -208,6 +208,14 @@
     .field-hint { color: var(--muted); font-size: 12px; margin-top: 5px; }
     .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 
+    /* ─── 导入向导：列映射表 ───────────────────────────────────────── */
+    .map-table { width: 100%; border-collapse: collapse; }
+    .map-table th, .map-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .map-table th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .map-table td:first-child { width: 40%; }
+    .map-table select { width: 100%; min-height: 40px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--fg); font: inherit; }
+    .form-group ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+
     /* ─── 预警条（--cc-1 暖红，不占 accent 额度）────────────────────── */
     .warn-banner {
       display: flex; align-items: center; gap: 8px;

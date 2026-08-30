@@ -518,6 +518,13 @@ function renderListInto(container) {
         { style: 'display:flex;gap:10px' },
         el('button', { class: 'btn', text: '调整课时', onclick: () => openAdjustModal() }),
         el('button', { class: 'btn', text: '导出', onclick: () => exportRecordsFlow() }),
+        el('button', {
+          class: 'btn',
+          text: '导入',
+          onclick: () => {
+            window.location.hash = '#/import';
+          },
+        }),
       ),
     ),
     toolbar,
@@ -1270,12 +1277,211 @@ async function renderRoster() {
   }
 }
 
+/* ───────────────────────── 导入历史考勤（#/import）───────────────────────── */
+
+const IMPORT_FIELDS = [
+  { key: 'studentName', label: '学员姓名', required: true },
+  { key: 'phone', label: '手机号', required: true },
+  { key: 'date', label: '日期', required: true },
+  { key: 'type', label: '类型', required: true },
+  { key: 'time', label: '时间' },
+  { key: 'className', label: '课程' },
+  { key: 'teacher', label: '老师' },
+  { key: 'lessons', label: '课时增减' },
+  { key: 'operator', label: '经办人' },
+  { key: 'note', label: '备注' },
+];
+
+function renderImport() {
+  renderTabs('');
+  view.replaceChildren(
+    el(
+      'div',
+      { class: 'page-head' },
+      el(
+        'div',
+        {},
+        el('h1', { class: 'page-title', text: '导入历史考勤' }),
+        el('p', {
+          class: 'page-sub',
+          text: '按「姓名 + 手机号」匹配学员；每一行都会真实扣 / 加课时（补录默认允许欠课记负）',
+        }),
+      ),
+      el('button', {
+        class: 'btn btn-ghost',
+        text: '返回流水',
+        onclick: () => {
+          window.location.hash = '#/records';
+        },
+      }),
+    ),
+    el('div', { id: 'imp-body' }),
+  );
+  const body = document.getElementById('imp-body');
+
+  const step1 = el(
+    'div',
+    { class: 'form-group' },
+    el('div', { class: 'group-title', text: '第 1 步：准备文件' }),
+    el('p', { class: 'page-sub', text: '没有模板？先下载一个，按表头填好再回来选文件。' }),
+    el(
+      'div',
+      { class: 'form-actions', style: 'justify-content:flex-start' },
+      el('button', {
+        class: 'btn',
+        text: '下载模板',
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            const { filePath } = unwrap(await shell.attendance.downloadTemplate());
+            toast(`模板已保存到 ${filePath}`);
+          } catch (e) {
+            if (e.code !== 'IO_CANCELLED') toast(`下载失败：${e.message}`);
+          } finally {
+            btn.disabled = false;
+          }
+        },
+      }),
+      el('button', {
+        class: 'btn btn-primary',
+        text: '选择文件…',
+        onclick: async (ev) => {
+          const btn = ev.currentTarget;
+          btn.disabled = true;
+          try {
+            const preview = unwrap(await shell.attendance.pickImportFile());
+            renderMapping(preview);
+          } catch (e) {
+            if (e.code !== 'IO_CANCELLED') toast(`读取失败：${e.message}`);
+            btn.disabled = false;
+          }
+        },
+      }),
+    ),
+  );
+  body.replaceChildren(step1);
+
+  function renderMapping({ filePath, headers, sample }) {
+    const opts = headers.filter((h) => h);
+    const selects = new Map();
+
+    const rows = IMPORT_FIELDS.map((f) => {
+      const sel = el(
+        'select',
+        {},
+        el('option', { value: '', text: '（不导入）' }),
+        ...opts.map((h) => el('option', { value: h, text: h })),
+      );
+      if (headers.includes(f.label)) sel.value = f.label;
+      sel.addEventListener('change', updateStartBtn);
+      selects.set(f.key, sel);
+      return el(
+        'tr',
+        {},
+        el('td', {}, f.label, f.required ? el('span', { class: 'req', text: ' ＊' }) : null),
+        el('td', {}, sel),
+      );
+    });
+
+    const startBtn = el('button', { class: 'btn btn-primary', text: '开始导入' });
+    const currentMapping = () => {
+      const m = {};
+      for (const [key, sel] of selects) if (sel.value) m[key] = sel.value;
+      return m;
+    };
+    function updateStartBtn() {
+      const m = currentMapping();
+      startBtn.disabled = !(m.studentName && m.phone && m.date && m.type);
+    }
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      try {
+        const report = unwrap(
+          await shell.attendance.import({ filePath, mapping: currentMapping() }),
+        );
+        renderReport(report);
+      } catch (e) {
+        toast(`导入失败：${e.message}`);
+        startBtn.disabled = false;
+      }
+    });
+
+    const sampleNote = sample.length
+      ? el('p', {
+          class: 'page-sub',
+          text: `示例首行：${sample[0].filter(Boolean).slice(0, 6).join(' | ')}`,
+        })
+      : null;
+
+    body.replaceChildren(
+      el(
+        'div',
+        { class: 'form-group' },
+        el('div', { class: 'group-title', text: '第 2 步：列映射' }),
+        el('p', { class: 'page-sub', text: `文件：${filePath}` }),
+        sampleNote,
+        el(
+          'table',
+          { class: 'map-table' },
+          el('thead', {}, el('tr', {}, el('th', { text: '模板字段' }), el('th', { text: '表格列' }))),
+          el('tbody', {}, ...rows),
+        ),
+        el('div', { class: 'form-actions' }, startBtn),
+      ),
+    );
+    updateStartBtn();
+  }
+
+  function renderReport(report) {
+    body.replaceChildren(
+      el(
+        'div',
+        { class: 'form-group' },
+        el('div', { class: 'group-title', text: '导入完成' }),
+        el('p', {
+          text: `成功 ${report.succeeded} 行，跳过 ${report.skipped} 行（疑似重复），失败 ${report.failed} 行。`,
+        }),
+        report.negativeBalance > 0
+          ? el(
+              'div',
+              { class: 'warn-banner' },
+              el('span', { class: 'dot' }),
+              el('span', {
+                text: `其中 ${report.negativeBalance} 行使对应学员课时变为负数`,
+              }),
+            )
+          : null,
+        report.failures.length > 0
+          ? el(
+              'ul',
+              {},
+              ...report.failures.map((f) => el('li', { text: `第 ${f.row} 行：${f.reason}` })),
+            )
+          : null,
+        el(
+          'div',
+          { class: 'form-actions' },
+          el('button', {
+            class: 'btn btn-primary',
+            text: '完成',
+            onclick: () => {
+              window.location.hash = '#/records';
+            },
+          }),
+        ),
+      ),
+    );
+  }
+}
+
 /* ───────────────────────── 路由 ───────────────────────── */
 
 function route() {
   const hash = window.location.hash || '#/records';
   if (hash.startsWith('#/quick')) return renderQuick();
   if (hash.startsWith('#/roster')) return renderRoster();
+  if (hash.startsWith('#/import')) return renderImport();
   return renderRecords();
 }
 

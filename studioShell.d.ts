@@ -9,6 +9,7 @@ import type {
   AllocationListQuery,
   AllocationListResult,
   AttendanceCorrectionInput,
+  AttendanceImportReport,
   AttendanceListQuery,
   AttendanceListResult,
   BatchCheckInInput,
@@ -126,6 +127,14 @@ declare global {
       export(query?: AttendanceListQuery): Promise<
         IpcResult<{ filePath: string; detail: number; summary: number }>
       >;
+      downloadTemplate(): Promise<IpcResult<{ filePath: string }>>;
+      pickImportFile(): Promise<
+        IpcResult<{ filePath: string; headers: string[]; sample: string[][] }>
+      >;
+      import(args: {
+        filePath: string;
+        mapping: Record<string, string>;
+      }): Promise<IpcResult<AttendanceImportReport>>;
     };
   }
 
