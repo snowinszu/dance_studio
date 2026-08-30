@@ -49,7 +49,8 @@ async function gotoReports(): Promise<void> {
   await page.waitForSelector('.report-section');
 }
 
-const EXPECTED_SECTIONS = ['预警中心', '概览', '考勤指标', '课程指标', '学员指标', '库存指标'];
+// 预警中心暂时下线（reports.js SHOW_ALERTS=false）
+const EXPECTED_SECTIONS = ['概览', '考勤指标', '课程指标', '学员指标', '库存指标'];
 
 /** 播种一套跨月的完整数据；返回当前年份。 */
 async function seed(): Promise<number> {

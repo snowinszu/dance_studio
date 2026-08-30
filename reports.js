@@ -255,6 +255,12 @@ function twoColTable(headLeft, headRight, rows) {
 
 /* ───────────────────────── 预警中心 ───────────────────────── */
 
+/**
+ * 预警中心暂时下线：置 true 即恢复第一屏的四组预警清单。
+ * 下面的 renderAlerts / alertGroup 与主进程的 reports:alerts 频道都保留，只是不渲染。
+ */
+const SHOW_ALERTS = false;
+
 /** 一组预警：标题 + 计数徽标 + 明细清单（每组最多渲染 50 行，超出给「还有 N 条」）。 */
 function alertGroup(title, items, renderRow) {
   const n = items.length;
@@ -763,12 +769,14 @@ async function load(body) {
   const range = currentRange();
   const sections = [];
 
-  // 预警中心（第一屏）——窗口固定，不跟随时间范围
-  try {
-    const alerts = unwrap(await shell.reports.alerts());
-    sections.push(renderAlerts(alerts));
-  } catch (e) {
-    sections.push(sectionError('预警中心', e));
+  // 预警中心（第一屏）——窗口固定，不跟随时间范围。当前暂时下线（见 SHOW_ALERTS）。
+  if (SHOW_ALERTS) {
+    try {
+      const alerts = unwrap(await shell.reports.alerts());
+      sections.push(renderAlerts(alerts));
+    } catch (e) {
+      sections.push(sectionError('预警中心', e));
+    }
   }
 
   // 概览 KPI——跟随时间范围
