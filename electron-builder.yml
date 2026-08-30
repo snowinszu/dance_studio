@@ -24,6 +24,9 @@ files:
   - attendance.js
   - course.html
   - course.js
+  - reports.html
+  - reports.js
+  - reports.charts.js
   - colors_and_type.css
   - package.json
 

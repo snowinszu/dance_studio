@@ -198,6 +198,9 @@ declare global {
       sessionUpdate(input: SessionUpdateInput): Promise<IpcResult<SessionMutationResult>>;
       sessionDelete(id: number): Promise<IpcResult<{ id: number }>>;
     };
+
+    /** 数据报表：纯只读聚合。各接口随指标区 issue 接入。 */
+    reports: Record<string, never>;
   }
 
   interface Window {

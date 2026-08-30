@@ -182,6 +182,9 @@ const api = {
     sessionUpdate: (input: unknown) => invoke(CH.courseSessionUpdate, input),
     sessionDelete: (id: number) => invoke(CH.courseSessionDelete, id),
   },
+
+  // 数据报表：纯只读聚合。频道随各指标区 issue 逐个接入，本期先占位命名空间。
+  reports: {},
 };
 
 contextBridge.exposeInMainWorld('studioShell', api);
