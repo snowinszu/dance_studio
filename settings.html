@@ -234,15 +234,25 @@
 
       <details class="restore-help">
         <summary>应用打不开、连这个页面都进不来，怎么办？</summary>
+        <p class="restore-help-more">
+          如果应用窗口还能打开（哪怕弹了「数据库打开失败」），直接用上面的「从文件恢复…」即可。
+          下面这套只在应用完全起不来时才需要——整个过程都是文件操作，不用命令行。
+        </p>
         <ol>
           <li>完全退出应用。</li>
-          <li>找到用户数据目录下的 <code>backups/</code>，挑要恢复的那份快照（文件名带日期时间）。</li>
-          <li>先把当前的 <code>dance-studio.db</code> 改名留底（例如加个 <code>.bak</code>）。</li>
-          <li>把选中的快照复制过去，改名为 <code>dance-studio.db</code>。</li>
+          <li>
+            打开「用户数据目录」下的 <code>backups</code> 文件夹：
+            <br>Windows：<code>%APPDATA%\晓·乐舞艺术空间\backups</code>
+            <br>macOS：<code>~/Library/Application Support/晓·乐舞艺术空间/backups</code>
+            <br>Linux：<code>~/.config/晓·乐舞艺术空间/backups</code>
+          </li>
+          <li>挑要恢复的那份快照：文件名带日期时间；<code>-premigrate-v</code> 是升级前留的，<code>-pre-restore</code> 是上次恢复前留的。</li>
+          <li>回到上一级（用户数据目录），把当前的 <code>dance-studio.db</code> 改名留底（例如加个 <code>.bak</code>）。</li>
+          <li>把选中的快照复制到这一级，改名为 <code>dance-studio.db</code>。</li>
           <li>删除同目录下的 <code>dance-studio.db-wal</code> 和 <code>dance-studio.db-shm</code>（若存在）。</li>
           <li>重新打开应用。结构版本若偏旧，应用会自动升级到最新。</li>
         </ol>
-        <p class="restore-help-more">完整说明见项目内的 <code>docs/backup-and-restore.md</code>。</p>
+        <p class="restore-help-more">完整说明（含常见问题）见项目内的 <code>docs/backup-and-restore.md</code>。</p>
       </details>
     </section>
   </main>
