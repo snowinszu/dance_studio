@@ -17,6 +17,7 @@ import type {
   InventoryItemInput,
   InventoryListQuery,
   IpcResult,
+  LessonAdjustmentInput,
   ListQuery,
   QuickCheckInInput,
   RosterCandidateQuery,
@@ -24,6 +25,7 @@ import type {
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
 import {
+  validateAdjustment,
   validateBatchCheckIn,
   validateCorrection,
   validateQuickCheckIn,
@@ -349,5 +351,16 @@ export function registerIpc(): void {
   handle(CH.attendanceVoid, (id?: number) => {
     if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少记录 id');
     return attendanceRepo.voidRecord(Number(id));
+  });
+
+  handle(CH.attendanceAdjustLessons, (input?: LessonAdjustmentInput) => {
+    const { values, errors, deltaError } = validateAdjustment(
+      input ?? ({} as LessonAdjustmentInput),
+    );
+    if (deltaError) throw new AppError('INVALID_ADJUSTMENT', deltaError, { delta: deltaError });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.adjustLessons(values);
   });
 }

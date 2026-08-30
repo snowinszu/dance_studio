@@ -24,6 +24,7 @@ import type {
   InventoryListQuery,
   InventoryListResult,
   IpcResult,
+  LessonAdjustmentInput,
   ListQuery,
   ListResult,
   QuickCheckInInput,
@@ -121,6 +122,7 @@ declare global {
       voidRecord(
         id: number,
       ): Promise<IpcResult<{ id: number; studentId: number; remainingLessons: number }>>;
+      adjustLessons(input: LessonAdjustmentInput): Promise<IpcResult<CheckInResult>>;
     };
   }
 

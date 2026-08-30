@@ -252,6 +252,14 @@ export function correctRecord(v: CorrectionValues): CheckInResult {
 }
 
 /**
+ * 手动调整课时：写一条 type='调整' 的流水 + 按带符号 delta 改余额。
+ * 复用 createRecord（对「调整」类型跳过重复检测）；delta 为 0 / 非整数的拦截在校验层。
+ */
+export function adjustLessons(v: RecordValues): CheckInResult {
+  return createRecord(v);
+}
+
+/**
  * 批量点名：逐条走 createRecord，**每条一个独立事务**。
  * 单条失败（余额不足未强制 / 重复未允许 / 学员不存在）只记进该行结果，不回滚已成功的条目。
  */

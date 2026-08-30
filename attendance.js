@@ -162,6 +162,161 @@ function recordRow(r) {
   );
 }
 
+/**
+ * 「调整课时」模态：搜学员 → 填带符号增减数 + 必填原因 → 写一条 type='调整' 流水。
+ */
+function openAdjustModal() {
+  const state = { keyword: '', picked: null, candidates: [], searching: false };
+  let deb = null;
+
+  const body = el('div');
+
+  const doSearch = async () => {
+    const kw = state.keyword.trim();
+    if (!kw) {
+      state.candidates = [];
+      paint();
+      return;
+    }
+    state.searching = true;
+    try {
+      state.candidates = unwrap(await shell.attendance.rosterCandidates({ keyword: kw }));
+    } catch (err) {
+      toast(err.message);
+      state.candidates = [];
+    }
+    state.searching = false;
+    paint();
+  };
+
+  const submit = async (force) => {
+    const p = state.picked;
+    if (!p) {
+      toast('请先选择学员');
+      return;
+    }
+    const payload = {
+      studentId: p.id,
+      delta: Number(document.getElementById('adj-delta').value),
+      reason: document.getElementById('adj-reason').value,
+      attendDate: document.getElementById('adj-date').value || undefined,
+      operator: document.getElementById('adj-operator').value || null,
+      note: document.getElementById('adj-note').value || null,
+      force,
+    };
+    try {
+      const res = unwrap(await shell.attendance.adjustLessons(payload));
+      toast(`已调整 · ${p.name} 剩 ${res.remainingLessons} 节`);
+      mask.remove();
+      listState.offset = 0;
+      await reloadList();
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT_LESSONS' && !force) {
+        const ok = await confirmModal({
+          title: '课时会变负',
+          body: '这次减扣会让该学员剩余课时低于 0。仍要保存吗？',
+          confirmLabel: '仍然保存',
+          danger: true,
+        });
+        if (ok) await submit(true);
+        return;
+      }
+      toast(err.message); // INVALID_ADJUSTMENT / VALIDATION_FAILED 等
+    }
+  };
+
+  function paint() {
+    const search = el('input', {
+      class: 'toolbar-search',
+      type: 'search',
+      placeholder: '学员姓名或手机号',
+      value: state.keyword,
+      oninput: (e) => {
+        state.keyword = e.target.value;
+        state.picked = null;
+        clearTimeout(deb);
+        deb = setTimeout(doSearch, 220);
+      },
+    });
+    const cands = el(
+      'div',
+      { class: 'candidate-list' },
+      ...(state.candidates.length === 0 && state.keyword.trim() && !state.searching
+        ? [el('div', { class: 'field-hint', text: '没有匹配的学员' })]
+        : state.candidates.map((c) =>
+            el(
+              'button',
+              {
+                type: 'button',
+                class: 'candidate' + (state.picked && state.picked.id === c.id ? ' picked' : ''),
+                onclick: () => {
+                  state.picked = c;
+                  paint();
+                },
+              },
+              el(
+                'div',
+                { class: 'c-main' },
+                el('div', { class: 'c-name', text: c.name }),
+                el('div', { class: 'c-sub', text: c.phone || '无手机号' }),
+              ),
+              el('span', {
+                class: 'c-bal',
+                text: `剩 ${c.remainingLessons == null ? '—' : c.remainingLessons} 节`,
+              }),
+            ),
+          )),
+    );
+
+    const children = [el('div', { class: 'toolbar' }, search), cands];
+
+    if (state.picked) {
+      const field = (label, node, req) =>
+        el(
+          'div',
+          { class: 'field' },
+          el('label', {}, label, req ? el('span', { class: 'req', text: '*' }) : null),
+          node,
+        );
+      children.push(
+        el(
+          'div',
+          { class: 'field-grid' },
+          field('增减课时', el('input', { id: 'adj-delta', type: 'number', step: '1', placeholder: '正数加 / 负数减' }), true),
+          field('原因', el('input', { id: 'adj-reason', type: 'text', maxlength: '200' }), true),
+          field('日期', el('input', { id: 'adj-date', type: 'date', value: todayYmd() })),
+          field('经办人', el('input', { id: 'adj-operator', type: 'text', maxlength: '20' })),
+          field('备注', el('input', { id: 'adj-note', type: 'text', maxlength: '200' })),
+        ),
+        el(
+          'div',
+          { class: 'form-actions' },
+          el('button', { class: 'btn', text: '取消', onclick: () => mask.remove() }),
+          el('button', {
+            class: 'btn btn-primary',
+            text: `为「${state.picked.name}」调整`,
+            onclick: () => submit(false),
+          }),
+        ),
+      );
+    }
+    body.replaceChildren(...children.filter(Boolean));
+  }
+
+  const mask = el(
+    'div',
+    { class: 'modal-mask', onclick: (e) => e.target === mask && mask.remove() },
+    el(
+      'div',
+      { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
+      el('h3', { text: '手动调整课时' }),
+      body,
+    ),
+  );
+  paint();
+  document.body.appendChild(mask);
+}
+
 async function voidRecordFlow(r) {
   const ok = await confirmModal({
     title: '撤销这条考勤',
@@ -358,6 +513,7 @@ function renderListInto(container) {
         el('h1', { class: 'page-title', text: '考勤流水' }),
         el('p', { class: 'page-sub', text: '每一次打卡 / 请假 / 缺勤 / 课时调整都在这里留痕' }),
       ),
+      el('button', { class: 'btn', text: '调整课时', onclick: () => openAdjustModal() }),
     ),
     toolbar,
   );
