@@ -482,6 +482,69 @@ async function refreshDrawer(panel, classId) {
       rosterList,
       el('button', { class: 'btn btn-sm', style: 'margin-top:10px', onclick: () => openAddStudent(panel, classId) }, '＋ 加入学员'),
     ),
+    await scheduleSection(panel, classId),
+  );
+}
+
+/** 班级抽屉里的「课表安排」区：周期规则列表 + 新增 / 删除。 */
+async function scheduleSection(panel, classId) {
+  let rules = [];
+  try {
+    rules = unwrap(await shell.course.scheduleList(classId));
+  } catch {
+    rules = [];
+  }
+  const refresh = () => refreshDrawer(panel, classId);
+  return el(
+    'div',
+    { class: 'drawer-section' },
+    el('h4', { text: `课表安排（${rules.length}）` }),
+    rules.length
+      ? el(
+          'div',
+          { class: 'roster-list' },
+          ...rules.map((r) =>
+            el(
+              'div',
+              { class: 'roster-item' },
+              el(
+                'div',
+                { class: 'r-main' },
+                el('div', { class: 'r-name', text: `${WEEKDAY_LABELS[r.weekday]} ${r.startTime}–${r.endTime}` }),
+                el('div', {
+                  class: 'r-sub',
+                  text: [r.effectiveTeacherName, r.effectiveRoom && `教室 ${r.effectiveRoom}`]
+                    .filter(Boolean)
+                    .join(' · ') || '跟随班主教 / 班教室',
+                }),
+              ),
+              el('button', { class: 'btn btn-sm', onclick: () => openScheduleForm(classId, { ...r, scheduleId: r.id }, refresh) }, '编辑'),
+              el(
+                'button',
+                {
+                  class: 'btn btn-sm btn-danger',
+                  onclick: async () => {
+                    if (!confirm('删除这条周期规则？已生成的排课实例不受影响。')) return;
+                    try {
+                      unwrap(await shell.course.scheduleDelete(r.id));
+                      toast('规则已删除');
+                      refresh();
+                    } catch (e) {
+                      toast(e.message);
+                    }
+                  },
+                },
+                '删除',
+              ),
+            ),
+          ),
+        )
+      : el('div', { class: 'field-hint', text: '还没有固定课。加一条「每周几 + 时间」的规则。' }),
+    el(
+      'button',
+      { class: 'btn btn-sm', style: 'margin-top:10px', onclick: () => openScheduleForm(classId, null, refresh) },
+      '＋ 新增规则',
+    ),
   );
 }
 
@@ -810,7 +873,8 @@ async function openScheduleDetail(entry) {
   void modal;
 }
 
-function openScheduleForm(classId, existing) {
+function openScheduleForm(classId, existing, onDone) {
+  const done = onDone || renderTimetable;
   const isEdit = !!existing;
   const f = {};
   f.weekday = field('星期', {
@@ -870,13 +934,13 @@ function openScheduleForm(classId, existing) {
         submit.disabled = false;
         submit.onclick = () => {
           close();
-          renderTimetable();
+          done();
         };
         return;
       }
       close();
       toast(isEdit ? '规则已保存' : '规则已新增');
-      renderTimetable();
+      done();
     } catch (e) {
       submit.disabled = false;
       if (e.code === 'VALIDATION_FAILED') paintErrors(fieldMap, e.fields);
