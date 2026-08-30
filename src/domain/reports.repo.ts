@@ -13,6 +13,9 @@
  */
 import { getDb } from '../db/connection';
 import type {
+  ClassAttendanceMatrix,
+  ClassMatrixBlock,
+  ClassMatrixRow,
   ReportAlerts,
   ReportAttendanceStats,
   ReportCourseStats,
@@ -652,4 +655,163 @@ export function getInventoryStats(range: ReportRange): ReportInventoryStats {
     .all({ cutoffStale }) as ReportInventoryStats['staleItems'];
 
   return { lowStock, totals, monthlyAllocations, topItems, topStudents, staleItems };
+}
+
+/* ───────────────────────── 按班级导出的出勤矩阵 ───────────────────────── */
+
+/** 一行月度聚合的原始形态（SQL 出来的稀疏行）。 */
+interface MonthAggRow {
+  studentId: number;
+  mon: number; // 1..12
+  present: number;
+  absent: number;
+  scheduled: number;
+}
+
+/**
+ * 弹保存框之前的便宜探测：所选年份有没有任何可导出的东西？
+ * 有排课班级 / 有在读学员 / 有当年考勤记录，三者任一为真即可导出。
+ */
+export function canExportAttendance(year: number): boolean {
+  const ys = `${year}-01-01`;
+  const ye = `${year}-12-31`;
+  const row = getDb()
+    .prepare(
+      `SELECT
+         EXISTS(SELECT 1 FROM class_sessions
+                 WHERE deleted_at IS NULL AND session_date BETWEEN @ys AND @ye) AS a,
+         EXISTS(SELECT 1 FROM students WHERE deleted_at IS NULL AND status = '在读') AS b,
+         EXISTS(SELECT 1 FROM attendance_records
+                 WHERE deleted_at IS NULL AND attend_date BETWEEN @ys AND @ye) AS c`,
+    )
+    .get({ ys, ye }) as { a: number; b: number; c: number };
+  return row.a === 1 || row.b === 1 || row.c === 1;
+}
+
+/** 花名册（去重）+ 月度聚合 → 每人一行；行按 left ASC、姓名 zh 排序。 */
+function assembleRows(
+  roster: { studentId: number; studentName: string; left: boolean }[],
+  aggRows: MonthAggRow[],
+): ClassMatrixRow[] {
+  const empty = () => ({ present: 0, absent: 0, scheduled: 0 });
+  const agg = new Map<number, ReturnType<typeof empty>[]>();
+  for (const r of aggRows) {
+    if (r.mon < 1 || r.mon > 12) continue;
+    let cells = agg.get(r.studentId);
+    if (!cells) {
+      cells = Array.from({ length: 12 }, empty);
+      agg.set(r.studentId, cells);
+    }
+    cells[r.mon - 1] = { present: r.present, absent: r.absent, scheduled: r.scheduled };
+  }
+
+  return roster
+    .map((s): ClassMatrixRow => {
+      const cells = agg.get(s.studentId) ?? Array.from({ length: 12 }, empty);
+      const monthly = cells.map((c) => c.present);
+      return {
+        studentId: s.studentId,
+        studentName: s.studentName,
+        left: s.left,
+        monthly,
+        yearTotal: monthly.reduce((a, b) => a + b, 0),
+        monthlyScheduled: cells.map((c) => c.scheduled),
+        monthlyAbsent: cells.map((c) => c.absent),
+      };
+    })
+    .sort(
+      (a, b) => Number(a.left) - Number(b.left) || a.studentName.localeCompare(b.studentName, 'zh'),
+    );
+}
+
+const MONTH_AGG_SELECT = `
+  a.student_id AS studentId,
+  CAST(substr(a.attend_date, 6, 2) AS INTEGER) AS mon,
+  SUM(a.type IN ('出勤','补课'))       AS present,
+  SUM(a.type = '缺勤')                 AS absent,
+  SUM(a.type IN ('出勤','缺勤','请假')) AS scheduled
+`;
+
+/**
+ * 按班级 + 全校汇总的年度出勤矩阵。供 io/reports-xlsx 组多 sheet 工作簿。
+ *
+ * - 合格班级 = 当年有未软删 class_sessions 的班（班级即使软删也算），按班名升序
+ * - 每个班级 sheet 的数值只统计「session_id ∈ 本班课节」的出勤/补课
+ * - 全校汇总不按 session_id 过滤（含 session_id 为空的记录）→ 某学员的 yearTotal
+ *   必然 >= 其在各班 sheet 的 yearTotal 之和
+ * - 花名册去重：同一学员在同一班「离班 + 再入班」只要有在册记录就按未离班处理
+ */
+export function getClassAttendanceMatrix(arg: { year: number }): ClassAttendanceMatrix {
+  const db = getDb();
+  const year = arg.year;
+  const ys = `${year}-01-01`;
+  const ye = `${year}-12-31`;
+
+  // —— 全校汇总 ——
+  const schoolStudents = db
+    .prepare(
+      `SELECT id, name FROM students WHERE deleted_at IS NULL AND status = '在读'
+       UNION
+       SELECT s.id, s.name FROM students s
+         JOIN attendance_records a ON a.student_id = s.id
+        WHERE a.deleted_at IS NULL AND a.attend_date BETWEEN @ys AND @ye`,
+    )
+    .all({ ys, ye }) as { id: number; name: string }[];
+
+  const schoolAgg = db
+    .prepare(
+      `SELECT ${MONTH_AGG_SELECT}
+         FROM attendance_records a
+        WHERE a.deleted_at IS NULL AND a.attend_date BETWEEN @ys AND @ye
+        GROUP BY a.student_id, mon`,
+    )
+    .all({ ys, ye }) as MonthAggRow[];
+
+  const schoolWide: ClassMatrixBlock = {
+    classId: null,
+    className: '全校汇总',
+    rows: assembleRows(
+      schoolStudents.map((s) => ({ studentId: s.id, studentName: s.name, left: false })),
+      schoolAgg,
+    ),
+  };
+
+  // —— 各班级 ——
+  const classList = db
+    .prepare(
+      `SELECT DISTINCT c.id, c.name
+         FROM classes c JOIN class_sessions s ON s.class_id = c.id
+        WHERE s.deleted_at IS NULL AND s.session_date BETWEEN @ys AND @ye
+        ORDER BY c.name COLLATE NOCASE`,
+    )
+    .all({ ys, ye }) as { id: number; name: string }[];
+
+  const rosterStmt = db.prepare(
+    `SELECT cs.student_id AS studentId, st.name AS studentName,
+            MIN(CASE WHEN cs.left_at IS NULL THEN 0 ELSE 1 END) AS leftFlag
+       FROM class_students cs JOIN students st ON st.id = cs.student_id
+      WHERE cs.class_id = @cid
+      GROUP BY cs.student_id`,
+  );
+  const classAggStmt = db.prepare(
+    `SELECT ${MONTH_AGG_SELECT}
+       FROM attendance_records a
+       JOIN class_sessions s ON s.id = a.session_id AND s.class_id = @cid AND s.deleted_at IS NULL
+      WHERE a.deleted_at IS NULL AND a.attend_date BETWEEN @ys AND @ye
+      GROUP BY a.student_id, mon`,
+  );
+
+  const classes: ClassMatrixBlock[] = classList.map((c) => {
+    const roster = (
+      rosterStmt.all({ cid: c.id }) as {
+        studentId: number;
+        studentName: string;
+        leftFlag: number;
+      }[]
+    ).map((r) => ({ studentId: r.studentId, studentName: r.studentName, left: r.leftFlag === 1 }));
+    const agg = classAggStmt.all({ cid: c.id, ys, ye }) as MonthAggRow[];
+    return { classId: c.id, className: c.name, rows: assembleRows(roster, agg) };
+  });
+
+  return { year, schoolWide, classes };
 }

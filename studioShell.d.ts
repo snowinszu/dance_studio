@@ -214,6 +214,9 @@ declare global {
       courseStats(range: ReportRange): Promise<IpcResult<ReportCourseStats>>;
       studentStats(range: ReportRange): Promise<IpcResult<ReportStudentStats>>;
       inventoryStats(range: ReportRange): Promise<IpcResult<ReportInventoryStats>>;
+      exportAttendanceByClass(
+        year: number,
+      ): Promise<IpcResult<{ sheetCount: number; classCount: number }>>;
     };
   }
 

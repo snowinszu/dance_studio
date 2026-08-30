@@ -54,6 +54,7 @@ import {
   importRecords,
   readImportPreview as readAttendanceImportPreview,
 } from '../io/attendance-xlsx';
+import { exportAttendanceByClass } from '../io/reports-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
@@ -628,4 +629,25 @@ export function registerIpc(): void {
   handle(CH.reportsInventoryStats, (q?: { from?: string; to?: string }) =>
     reportsRepo.getInventoryStats(checkedRange(q)),
   );
+
+  handle(CH.reportsExportAttendanceByClass, async (args?: { year?: number }) => {
+    const year = Number(args?.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      throw new AppError('BAD_REQUEST', '缺少合法年份');
+    }
+    // 先便宜探测：没有任何可导出数据就不弹保存框（FR-16）
+    if (!reportsRepo.canExportAttendance(year)) {
+      throw new AppError('REPORT_EMPTY', '所选年份没有排课班级，也没有学员考勤记录，无法导出');
+    }
+    const filePath = await pickSavePath('导出出勤统计', `出勤统计-${year}-${ymdCompact()}.xlsx`);
+    try {
+      return await exportAttendanceByClass(year, filePath);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
 }

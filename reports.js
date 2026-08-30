@@ -661,6 +661,59 @@ function renderInventory(stats) {
   );
 }
 
+/* ───────────────────────── 导出行 ───────────────────────── */
+
+/** 导出所选年份，模块内保留（跨 render 不重置）。 */
+let exportYear = new Date().getFullYear();
+
+function renderExportRow() {
+  const cur = new Date().getFullYear();
+  const years = [];
+  for (let y = cur; y >= cur - 4; y -= 1) years.push(y);
+  if (!years.includes(exportYear)) exportYear = cur;
+
+  const sel = el(
+    'select',
+    {
+      'aria-label': '导出年份',
+      onchange: (e) => {
+        exportYear = Number(e.target.value);
+      },
+    },
+    ...years.map((y) => el('option', { value: String(y) }, `${y} 年`)),
+  );
+  sel.value = String(exportYear);
+
+  const btn = el(
+    'button',
+    {
+      class: 'btn btn-primary',
+      type: 'button',
+      onclick: async () => {
+        btn.disabled = true;
+        try {
+          const d = unwrap(await shell.reports.exportAttendanceByClass(exportYear));
+          toast(`已导出 ${d.sheetCount} 张工作表（含全校汇总）`);
+        } catch (e) {
+          if (e.code !== 'IO_CANCELLED') toast(e.message || '导出失败');
+        } finally {
+          btn.disabled = false;
+        }
+      },
+    },
+    '导出出勤统计 Excel',
+  );
+
+  // 未关联课节提示由 load() 里的概览数据填充
+  return el(
+    'div',
+    { class: 'report-actions' },
+    sel,
+    btn,
+    el('span', { class: 'unlinked-hint', id: 'unlinked-hint' }),
+  );
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -683,6 +736,7 @@ function render() {
       ),
     ),
     renderRangeControl(),
+    renderExportRow(),
     body,
   );
 
@@ -721,6 +775,13 @@ async function load(body) {
   try {
     const overview = unwrap(await shell.reports.overview(range));
     sections.push(renderOverview(overview));
+    const hint = document.getElementById('unlinked-hint');
+    if (hint) {
+      hint.textContent =
+        overview.unlinkedCheckInsThisYear > 0
+          ? `本年 ${overview.unlinkedCheckInsThisYear} 条出勤未关联课节，未纳入班级统计`
+          : '';
+    }
   } catch (e) {
     sections.push(sectionError('概览', e));
   }

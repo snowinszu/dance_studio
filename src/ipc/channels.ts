@@ -98,6 +98,7 @@ export const CH = {
   reportsCourseStats: 'reports:courseStats',
   reportsStudentStats: 'reports:studentStats',
   reportsInventoryStats: 'reports:inventoryStats',
+  reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

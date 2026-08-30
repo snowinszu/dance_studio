@@ -88,6 +88,7 @@ const CH = {
   reportsCourseStats: 'reports:courseStats',
   reportsStudentStats: 'reports:studentStats',
   reportsInventoryStats: 'reports:inventoryStats',
+  reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -199,6 +200,8 @@ const api = {
     studentStats: (range: { from: string; to: string }) => invoke(CH.reportsStudentStats, range),
     inventoryStats: (range: { from: string; to: string }) =>
       invoke(CH.reportsInventoryStats, range),
+    exportAttendanceByClass: (year: number) =>
+      invoke(CH.reportsExportAttendanceByClass, { year }),
   },
 };
 

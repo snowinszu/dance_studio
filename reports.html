@@ -141,6 +141,19 @@
     .range-custom .sep { color: var(--muted); }
     .range-note { color: var(--muted); font-size: 12px; }
 
+    /* ─── 导出行 ──────────────────────────────────────────────────── */
+    .report-actions {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin-bottom: 18px;
+    }
+    .report-actions select {
+      min-height: 44px; padding: 8px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .report-actions select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .unlinked-hint { color: var(--cc-1); font-size: 12px; }
+
     /* ─── 报表分区（可折叠）───────────────────────────────────────── */
     .report-section {
       background: var(--surface); border: 1px solid var(--border);

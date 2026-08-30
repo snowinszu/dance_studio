@@ -300,7 +300,10 @@ export type IpcErrorCode =
   /** 时间格式非法或 end_time <= start_time */
   | 'INVALID_TIME_RANGE'
   /** weekday 非 0–6 整数 */
-  | 'INVALID_WEEKDAY';
+  | 'INVALID_WEEKDAY'
+  // —— 数据报表 ——
+  /** 所选年份没有排课班级，也没有学员考勤记录，无可导出数据 */
+  | 'REPORT_EMPTY';
 
 // ===========================================================================
 // 库存管理模块
@@ -1041,4 +1044,37 @@ export interface ReportInventoryStats {
   topStudents: { studentId: number; name: string; quantity: number }[];
   /** 未软删、在库 > 0、近 90 天无领用；lastClaimedAt 为历来最近一次领用日期（可能无） */
   staleItems: { id: number; name: string; quantity: number; lastClaimedAt: string | null }[];
+}
+
+/* ── 按班级导出的出勤矩阵（供 io/reports-xlsx 组表）── */
+
+export interface ClassMatrixRow {
+  studentId: number;
+  /** 不含「（已离班）」后缀，后缀在 io 层拼 */
+  studentName: string;
+  /** 该班花名册里 left_at 非空（曾离班且无在册记录）；全校汇总恒 false */
+  left: boolean;
+  /** 长度 12：各月「出勤 + 补课」次数 */
+  monthly: number[];
+  /** monthly 之和 */
+  yearTotal: number;
+  /** 长度 12：各月「出勤 + 缺勤 + 请假」（标黄分母） */
+  monthlyScheduled: number[];
+  /** 长度 12：各月「缺勤」（标黄分子） */
+  monthlyAbsent: number[];
+}
+
+export interface ClassMatrixBlock {
+  /** null = 全校汇总 */
+  classId: number | null;
+  /** 全校汇总固定 '全校汇总' */
+  className: string;
+  rows: ClassMatrixRow[];
+}
+
+export interface ClassAttendanceMatrix {
+  year: number;
+  schoolWide: ClassMatrixBlock;
+  /** 当年有未软删 class_sessions 的班级，按班名升序 */
+  classes: ClassMatrixBlock[];
 }
