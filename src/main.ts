@@ -10,21 +10,11 @@ import * as path from 'node:path';
 import { getDb } from './db/connection';
 import { run as runMigrations, LATEST_VERSION } from './db/migrations';
 import { createMilestoneSnapshot, ensureDailySnapshot } from './db/backup';
+import { backupDir } from './paths';
 import { registerIpc } from './ipc/register';
 
 /** 每日快照保留份数（迁移前里程碑不受此限，一律留存）。 */
 const KEEP_DAILY_SNAPSHOTS = 20;
-
-/**
- * 备份目录：userData/backups。
- * 单元测试用 ELECTRON_RUN_AS_NODE 跑，此时 app 为 undefined —— 与 connection.ts 同款，
- * 用可选链兜底退回当前工作目录。
- */
-function resolveBackupDir(): string {
-  const base =
-    typeof app?.getPath === 'function' ? app.getPath('userData') : process.cwd();
-  return path.join(base, 'backups');
-}
 
 // 单窗口引用挂在模块作用域：若只用局部变量，窗口对象可能被垃圾回收，
 // 导致窗口在运行中突然白屏或关闭。
@@ -48,7 +38,7 @@ function initDatabase(): void {
     if (currentVersion < LATEST_VERSION) {
       try {
         const meta = createMilestoneSnapshot({
-          dir: resolveBackupDir(),
+          dir: backupDir(),
           version: LATEST_VERSION,
         });
         console.log(`[backup] 迁移前里程碑已生成：${meta.name}`);
@@ -71,7 +61,7 @@ function initDatabase(): void {
     // —— 每日快照 ——
     // 距上一份 daily 快照超 24h 才补一份，随后按份数轮换。不 await：让它在后台跑，
     // 不挡窗口创建；任何异常自己吞掉只记日志（备份失败不该影响正常使用）。
-    void ensureDailySnapshot({ dir: resolveBackupDir(), keep: KEEP_DAILY_SNAPSHOTS })
+    void ensureDailySnapshot({ dir: backupDir(), keep: KEEP_DAILY_SNAPSHOTS })
       .then((meta) => {
         if (meta) console.log(`[backup] 每日快照已生成：${meta.name}`);
       })

@@ -100,6 +100,10 @@ export const CH = {
   reportsInventoryStats: 'reports:inventoryStats',
   reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
   reportsHomeSummary: 'reports:homeSummary',
+
+  // 数据库快照备份
+  backupCreate: 'backup:create',
+  backupList: 'backup:list',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

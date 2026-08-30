@@ -90,6 +90,8 @@ const CH = {
   reportsInventoryStats: 'reports:inventoryStats',
   reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
   reportsHomeSummary: 'reports:homeSummary',
+  backupCreate: 'backup:create',
+  backupList: 'backup:list',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -204,6 +206,12 @@ const api = {
     exportAttendanceByClass: (year: number) =>
       invoke(CH.reportsExportAttendanceByClass, { year }),
     homeSummary: () => invoke(CH.reportsHomeSummary),
+  },
+
+  // 数据库快照备份
+  backup: {
+    create: () => invoke(CH.backupCreate),
+    list: () => invoke(CH.backupList),
   },
 };
 

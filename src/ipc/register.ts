@@ -58,6 +58,8 @@ import { exportAttendanceByClass } from '../io/reports-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
+import { backupDir } from '../paths';
+import { createSnapshot, listSnapshots } from '../db/backup';
 import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
@@ -631,6 +633,23 @@ export function registerIpc(): void {
   );
 
   handle(CH.reportsHomeSummary, () => reportsRepo.getHomeSummary());
+
+  // —— 数据库快照备份 ——
+  handle(CH.backupCreate, async () => {
+    try {
+      return await createSnapshot({ dir: backupDir() });
+    } catch (err) {
+      // 完整性校验失败（BACKUP_VERIFY_FAILED）原样透出；其余（磁盘满 / 无写权限……）
+      // 归到 IO_WRITE_FAILED，带上原始 message 方便用户判断
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `备份写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.backupList, () => listSnapshots(backupDir()));
 
   handle(CH.reportsExportAttendanceByClass, async (args?: { year?: number }) => {
     const year = Number(args?.year);

@@ -56,6 +56,7 @@ import type {
   SessionMonthQuery,
   SessionMutationResult,
   SessionUpdateInput,
+  SnapshotMeta,
   Student,
   StudentInput,
   Tag,
@@ -219,6 +220,14 @@ declare global {
         year: number,
       ): Promise<IpcResult<{ sheetCount: number; classCount: number }>>;
       homeSummary(): Promise<IpcResult<HomeSummary>>;
+    };
+
+    /** 数据库快照备份。 */
+    backup: {
+      /** 立即生成一份日常快照，返回其元信息。 */
+      create(): Promise<IpcResult<SnapshotMeta>>;
+      /** 列出备份目录里的全部快照，按创建时间倒序。 */
+      list(): Promise<IpcResult<SnapshotMeta[]>>;
     };
   }
 
