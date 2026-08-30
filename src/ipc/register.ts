@@ -620,4 +620,8 @@ export function registerIpc(): void {
   handle(CH.reportsCourseStats, (q?: { from?: string; to?: string }) =>
     reportsRepo.getCourseStats(checkedRange(q)),
   );
+
+  handle(CH.reportsStudentStats, (q?: { from?: string; to?: string }) =>
+    reportsRepo.getStudentStats(checkedRange(q)),
+  );
 }

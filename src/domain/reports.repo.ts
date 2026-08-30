@@ -18,6 +18,7 @@ import type {
   ReportCourseStats,
   ReportOverview,
   ReportRange,
+  ReportStudentStats,
 } from '../shared/types';
 
 /* ───────────────────────── 日期小工具 ───────────────────────── */
@@ -171,31 +172,9 @@ const DORMANT_DAYS = 60;
 /** 「空课」回看窗口：近 N 天内、已发生、0 到课人次的正常课节。 */
 const EMPTY_SESSION_DAYS = 30;
 
-/**
- * 「今天必须处理」的四组异常，不受页面时间范围约束（窗口是固定常量）。
- *
- * - lowStock       未软删物件，库存 <= 预警阈值，最紧缺在前
- * - lowBalance     在读学员，剩余课时 <= 3
- * - dormant        在读、未软删，近 DORMANT_DAYS 天无「出勤」记录；带最近一次出勤日期
- * - emptySessions  近 EMPTY_SESSION_DAYS 天内、已发生、status='正常'、关联出勤/补课人次为 0 的课节
- */
-export function getAlerts(): ReportAlerts {
-  const db = getDb();
-  const today = todayLocal();
-  const cutoffDormant = daysAgoLocal(DORMANT_DAYS);
-  const cutoffEmpty = daysAgoLocal(EMPTY_SESSION_DAYS);
-
-  const lowStock = db
-    .prepare(
-      `SELECT id, name, quantity, low_stock_threshold AS threshold
-         FROM inventory_items
-        WHERE deleted_at IS NULL AND quantity <= low_stock_threshold
-        ORDER BY (quantity - low_stock_threshold) ASC, name COLLATE NOCASE
-        LIMIT ${ALERT_LIMIT}`,
-    )
-    .all() as ReportAlerts['lowStock'];
-
-  const lowBalance = db
+/** 在读且剩余课时 <= 3 的学员。预警中心与学员指标区共用。 */
+function queryLowBalance(): { id: number; name: string; remainingLessons: number }[] {
+  return getDb()
     .prepare(
       `SELECT id, name, remaining_lessons AS remainingLessons
          FROM students
@@ -204,9 +183,13 @@ export function getAlerts(): ReportAlerts {
         ORDER BY remaining_lessons ASC, name COLLATE NOCASE
         LIMIT ${ALERT_LIMIT}`,
     )
-    .all() as ReportAlerts['lowBalance'];
+    .all() as { id: number; name: string; remainingLessons: number }[];
+}
 
-  const dormant = db
+/** 在读、未软删，近 DORMANT_DAYS 天无「出勤」的学员，带历来最近一次出勤日期。共用。 */
+function queryDormant(): { id: number; name: string; lastAttendDate: string | null }[] {
+  const cutoffDormant = daysAgoLocal(DORMANT_DAYS);
+  return getDb()
     .prepare(
       `SELECT s.id, s.name,
               (SELECT MAX(a.attend_date) FROM attendance_records a
@@ -220,7 +203,34 @@ export function getAlerts(): ReportAlerts {
         ORDER BY (lastAttendDate IS NULL) DESC, lastAttendDate ASC, s.name COLLATE NOCASE
         LIMIT ${ALERT_LIMIT}`,
     )
-    .all({ cutoffDormant }) as ReportAlerts['dormant'];
+    .all({ cutoffDormant }) as { id: number; name: string; lastAttendDate: string | null }[];
+}
+
+/**
+ * 「今天必须处理」的四组异常，不受页面时间范围约束（窗口是固定常量）。
+ *
+ * - lowStock       未软删物件，库存 <= 预警阈值，最紧缺在前
+ * - lowBalance     在读学员，剩余课时 <= 3
+ * - dormant        在读、未软删，近 DORMANT_DAYS 天无「出勤」记录；带最近一次出勤日期
+ * - emptySessions  近 EMPTY_SESSION_DAYS 天内、已发生、status='正常'、关联出勤/补课人次为 0 的课节
+ */
+export function getAlerts(): ReportAlerts {
+  const db = getDb();
+  const today = todayLocal();
+  const cutoffEmpty = daysAgoLocal(EMPTY_SESSION_DAYS);
+
+  const lowStock = db
+    .prepare(
+      `SELECT id, name, quantity, low_stock_threshold AS threshold
+         FROM inventory_items
+        WHERE deleted_at IS NULL AND quantity <= low_stock_threshold
+        ORDER BY (quantity - low_stock_threshold) ASC, name COLLATE NOCASE
+        LIMIT ${ALERT_LIMIT}`,
+    )
+    .all() as ReportAlerts['lowStock'];
+
+  const lowBalance = queryLowBalance();
+  const dormant = queryDormant();
 
   const emptySessions = db
     .prepare(
@@ -470,4 +480,86 @@ export function getCourseStats(range: ReportRange): ReportCourseStats {
     .all({ from, to, today }) as ReportCourseStats['emptySessions'];
 
   return { teacherLoad, cancelRate, classFillRate, emptySessions };
+}
+
+/* ───────────────────────── 学员指标 ───────────────────────── */
+
+/** 排行榜返回行数上限。 */
+const REFERRER_LIMIT = 10;
+
+/**
+ * 学员结构、增长趋势与需跟进清单。
+ *
+ * - statusDist    按 status 分组计数（排除软删）
+ * - danceTypeDist 舞种分布：dance_types 是 JSON 数组串，先在子查询里用 json_valid 过滤掉脏数据，
+ *                 再 json_each 展开——一名多舞种学员计入多个 danceType
+ * - levelDist     按 current_level 分组，空值归「未分级」
+ * - monthlyNew    按 enroll_date 自然月分组的新登记数，repo 补齐 [from,to] 的每个月
+ * - referrerTop   按 referrer 分组计数前 10（空值不计）
+ * - lowBalance / dormant  与预警中心同口径（复用私有查询）
+ */
+export function getStudentStats(range: ReportRange): ReportStudentStats {
+  const db = getDb();
+  const { from, to } = range;
+
+  const statusDist = db
+    .prepare(
+      `SELECT status, COUNT(*) AS count
+         FROM students WHERE deleted_at IS NULL
+        GROUP BY status ORDER BY count DESC, status`,
+    )
+    .all() as ReportStudentStats['statusDist'];
+
+  const danceTypeDist = db
+    .prepare(
+      `SELECT je.value AS danceType, COUNT(*) AS count
+         FROM (SELECT dance_types FROM students
+                WHERE deleted_at IS NULL AND json_valid(dance_types)) v,
+              json_each(v.dance_types) je
+        GROUP BY je.value ORDER BY count DESC, danceType`,
+    )
+    .all() as ReportStudentStats['danceTypeDist'];
+
+  const levelDist = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(current_level), ''), '未分级') AS level, COUNT(*) AS count
+         FROM students WHERE deleted_at IS NULL
+        GROUP BY level ORDER BY count DESC, level`,
+    )
+    .all() as ReportStudentStats['levelDist'];
+
+  const monthNewRows = db
+    .prepare(
+      `SELECT substr(enroll_date, 1, 7) AS ym, COUNT(*) AS n
+         FROM students
+        WHERE deleted_at IS NULL AND enroll_date IS NOT NULL
+          AND enroll_date BETWEEN @from AND @to
+        GROUP BY ym`,
+    )
+    .all({ from, to }) as { ym: string; n: number }[];
+  const newMap = new Map(monthNewRows.map((r) => [r.ym, r.n]));
+  const monthlyNew = monthsBetween(from, to).map((month) => ({
+    month,
+    count: newMap.get(month) ?? 0,
+  }));
+
+  const referrerTop = db
+    .prepare(
+      `SELECT TRIM(referrer) AS referrer, COUNT(*) AS count
+         FROM students
+        WHERE deleted_at IS NULL AND referrer IS NOT NULL AND TRIM(referrer) <> ''
+        GROUP BY TRIM(referrer) ORDER BY count DESC, referrer
+        LIMIT ${REFERRER_LIMIT}`,
+    )
+    .all() as ReportStudentStats['referrerTop'];
+
+  return {
+    statusDist,
+    danceTypeDist,
+    levelDist,
+    monthlyNew,
+    referrerTop,
+    lowBalance: queryLowBalance(),
+    dormant: queryDormant(),
+  };
 }

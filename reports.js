@@ -535,6 +535,61 @@ function renderCourse(stats) {
   );
 }
 
+/* ───────────────────────── 学员指标区 ───────────────────────── */
+
+function renderStudent(stats) {
+  return section(
+    '学员指标',
+    true,
+
+    subHead('状态分布'),
+    distList(stats.statusDist.map((r) => ({ label: r.status, value: r.count }))),
+
+    subHead('舞种分布'),
+    distList(stats.danceTypeDist.map((r) => ({ label: r.danceType, value: r.count }))),
+
+    subHead('等级分布'),
+    distList(stats.levelDist.map((r) => ({ label: r.level, value: r.count }))),
+
+    subHead('月度新增学员'),
+    el('div', {
+      class: 'chart',
+      html: lineChartSVG({
+        points: stats.monthlyNew.map((m) => ({ label: m.month, value: m.count })),
+        width: 600,
+        height: 160,
+        title: '月度新增学员趋势',
+      }),
+    }),
+    el(
+      'div',
+      { class: 'chart-xlabels' },
+      ...stats.monthlyNew.map((m) => el('span', {}, `${m.month.slice(2)}·${m.count}`)),
+    ),
+
+    subHead('转介绍排行'),
+    twoColTable(
+      '转介绍人',
+      '人数',
+      stats.referrerTop.map((r) => [r.referrer, r.count]),
+    ),
+
+    subHead('课时余额预警（≤ 3）'),
+    twoColTable(
+      '学员',
+      '剩余课时',
+      stats.lowBalance.map((r) => [r.name, r.remainingLessons]),
+    ),
+
+    subHead('沉睡学员（近 60 天无出勤）'),
+    twoColTable(
+      '学员',
+      '最近出勤',
+      stats.dormant.map((r) => [r.name, r.lastAttendDate || '无记录']),
+    ),
+  );
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -613,6 +668,14 @@ async function load(body) {
     sections.push(renderCourse(course));
   } catch (e) {
     sections.push(sectionError('课程指标', e));
+  }
+
+  // 学员指标区
+  try {
+    const student = unwrap(await shell.reports.studentStats(range));
+    sections.push(renderStudent(student));
+  } catch (e) {
+    sections.push(sectionError('学员指标', e));
   }
 
   body.replaceChildren(...sections);

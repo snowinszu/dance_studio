@@ -1008,3 +1008,21 @@ export interface ReportCourseStats {
   /** 区间内、已发生、正常、关联出勤/补课人次为 0 的课节 */
   emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
 }
+
+/** 学员指标区。 */
+export interface ReportStudentStats {
+  /** 按 status 分组计数（排除软删） */
+  statusDist: { status: string; count: number }[];
+  /** 舞种分布（dance_types JSON 数组展开）；一名多舞种学员计入多个 danceType */
+  danceTypeDist: { danceType: string; count: number }[];
+  /** 按 current_level 分组，空值归「未分级」 */
+  levelDist: { level: string; count: number }[];
+  /** 按 enroll_date 自然月分组的新登记数，'YYYY-MM' 升序，repo 已补齐每个月（缺月为 0） */
+  monthlyNew: { month: string; count: number }[];
+  /** 按 referrer 分组计数前 10（空值不计） */
+  referrerTop: { referrer: string; count: number }[];
+  /** 在读且剩余课时 <= 3（与预警中心同口径） */
+  lowBalance: { id: number; name: string; remainingLessons: number }[];
+  /** 在读、未软删，近 60 天无「出勤」（与预警中心同口径） */
+  dormant: { id: number; name: string; lastAttendDate: string | null }[];
+}
