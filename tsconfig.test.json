@@ -7,7 +7,11 @@
     "rootDir": ".",
     "outDir": "dist-test",
     "noEmit": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // reports.charts.js 是渲染层文件、不进主 tsc 构建；这里编进 dist-test/
+    // 好让 tests/unit/reports-charts.test.ts 直接把它当模块导入做单测。
+    // 不开 checkJs：只转译、不对这份手写 JS 做类型报错。
+    "allowJs": true
   },
-  "include": ["src/**/*.ts", "tests/unit/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/unit/**/*.ts", "reports.charts.js"]
 }
