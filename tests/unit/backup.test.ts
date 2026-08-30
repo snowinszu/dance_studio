@@ -23,10 +23,13 @@ import { getDb, closeDb } from '../../src/db/connection';
 import {
   createMilestoneSnapshot,
   createSnapshot,
+  ensureDailySnapshot,
+  hasRecentDailySnapshot,
   listSnapshots,
   pruneSnapshots,
 } from '../../src/db/backup';
 
+const ONE_DAY = 24 * 60 * 60 * 1000;
 const workDir = mkdtempSync(path.join(tmpdir(), 'ds-backup-'));
 // connection.ts 只在首次 getDb() 时解析路径，所以此刻设 env 仍来得及
 process.env['STUDIO_DB_PATH'] = path.join(workDir, 'source.db');
@@ -67,6 +70,10 @@ test('createSnapshot：产出文件可独立打开，quick_check=ok，行数与�
   assert.equal(typeof meta.userVersion, 'number');
   assert.ok(existsSync(meta.path));
   assert.ok(!existsSync(`${meta.path}.tmp`), '.tmp 不应残留');
+  // 快照应是自包含单文件：不带 WAL 伴生文件，也没有 .tmp-wal/.tmp-shm 遗留
+  for (const junk of ['-wal', '-shm', '.tmp-wal', '.tmp-shm']) {
+    assert.ok(!existsSync(`${meta.path}${junk}`), `不应残留 ${junk}`);
+  }
 
   const copy = new Database(meta.path, { readonly: true });
   try {
@@ -147,4 +154,33 @@ test('pruneSnapshots：keep=3 → 5 份日常删掉最旧 2 份，2 份里程碑
   const left = listSnapshots(dir);
   assert.equal(left.filter((s) => s.kind === 'daily').length, 3);
   assert.equal(left.filter((s) => s.kind === 'milestone').length, 2);
+});
+
+test('hasRecentDailySnapshot：窗口内有 daily → 应跳过；只有超期 daily 或里程碑 → 应备份', () => {
+  const dir = path.join(workDir, 'recent-test');
+  const now = Date.parse('2026-08-30T12:00:00Z');
+  const hoursAgo = (h: number): number => (now - h * 3_600_000) / 1000;
+
+  // 20h 前的一份 daily —— 在 24h 窗口内 → 应跳过
+  const only = fakeSnapshot(dir, 'dance-studio-20260830-000000.db', hoursAgo(20));
+  assert.equal(hasRecentDailySnapshot(dir, ONE_DAY, now), true);
+
+  // 改成 30h 前 —— 超期 → 应备份
+  utimesSync(only, hoursAgo(30), hoursAgo(30));
+  assert.equal(hasRecentDailySnapshot(dir, ONE_DAY, now), false);
+
+  // 再加一份 1h 前的「里程碑」—— 里程碑不算「daily 近备」 → 仍应备份
+  fakeSnapshot(dir, 'dance-studio-20260830-110000-premigrate-v6.db', hoursAgo(1));
+  assert.equal(hasRecentDailySnapshot(dir, ONE_DAY, now), false);
+});
+
+test('ensureDailySnapshot：已有近 24h 的 daily 时跳过（返回 null，不新增文件）', async () => {
+  const dir = path.join(workDir, 'ensure-skip');
+  fakeSnapshot(dir, 'dance-studio-20990101-000000.db', Date.now() / 1000);
+  const before = listSnapshots(dir).length;
+
+  const meta = await ensureDailySnapshot({ dir, keep: 20 });
+
+  assert.equal(meta, null);
+  assert.equal(listSnapshots(dir).length, before);
 });

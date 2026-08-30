@@ -80,10 +80,35 @@ function statMeta(file: string, userVersion?: number): SnapshotMeta {
   return meta;
 }
 
+/** 删掉某个 SQLite 文件可能带出的伴生文件（-wal / -shm / -journal），不存在则忽略。 */
+function rmSidecars(dbFile: string): void {
+  for (const ext of ['-wal', '-shm', '-journal']) {
+    fs.rmSync(`${dbFile}${ext}`, { force: true });
+  }
+}
+
+/**
+ * 把快照文件切成 DELETE（回滚日志）模式。
+ * `db.backup()` 的副本继承源库的 WAL 模式，会带出 `-wal` / `-shm` 两个伴生文件；
+ * 切成 DELETE 会合并掉 WAL、并删除这两个伴生文件，之后快照就是一个自包含单文件——
+ * 便于另存到 U 盘、便于手动恢复，也不会在备份目录里落一堆 `.tmp-wal` / `.tmp-shm`。
+ * （`VACUUM INTO` 产出的里程碑快照本就是 DELETE 模式，无需此步。）
+ */
+function normalizeToSingleFile(dbFile: string): void {
+  const conn = new Database(dbFile);
+  try {
+    conn.pragma('journal_mode = DELETE');
+  } finally {
+    conn.close();
+  }
+  rmSidecars(dbFile);
+}
+
 /** 「校验 .tmp → 原子改名 → 读元信息」的收尾三步，两种生成方式共用。 */
 function finalizeVerified(tmpPath: string, finalPath: string): SnapshotMeta {
   const { userVersion } = verifyFile(tmpPath);
   fs.renameSync(tmpPath, finalPath);
+  rmSidecars(tmpPath); // 兜底：校验若留下了 .tmp-wal/-shm，一并清掉
   return statMeta(finalPath, userVersion);
 }
 
@@ -104,13 +129,16 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Snaps
   const suffix = opts.tag ? `-${opts.tag}` : '';
   const finalPath = path.join(opts.dir, `dance-studio-${localStamp()}${suffix}.db`);
   const tmpPath = `${finalPath}.tmp`;
-  // 上一次失败可能留下 .tmp；先清掉，免得 backup() 往一个旧文件里写
+  // 上一次失败可能留下 .tmp（及其伴生文件）；先清掉，免得 backup() 往一个旧文件里写
   fs.rmSync(tmpPath, { force: true });
+  rmSidecars(tmpPath);
   try {
     await getDb().backup(tmpPath);
+    normalizeToSingleFile(tmpPath);
     return finalizeVerified(tmpPath, finalPath);
   } catch (err) {
     fs.rmSync(tmpPath, { force: true });
+    rmSidecars(tmpPath);
     throw err;
   }
 }
@@ -134,14 +162,16 @@ export function createMilestoneSnapshot(opts: MilestoneSnapshotOptions): Snapsho
   );
   const tmpPath = `${finalPath}.tmp`;
   fs.rmSync(tmpPath, { force: true });
+  rmSidecars(tmpPath);
   try {
     // VACUUM INTO 的目标文件必须不存在（上一行已先删 .tmp）。
     // pragma/VACUUM 不接受占位符参数；tmpPath 由本模块拼接、无用户输入，
-    // 转义单引号后内联是安全的。
+    // 转义单引号后内联是安全的。VACUUM INTO 产出的是 DELETE 模式的自包含单文件。
     getDb().exec(`VACUUM INTO '${tmpPath.replace(/'/g, "''")}'`);
     return finalizeVerified(tmpPath, finalPath);
   } catch (err) {
     fs.rmSync(tmpPath, { force: true });
+    rmSidecars(tmpPath);
     throw err;
   }
 }
@@ -161,6 +191,46 @@ export function listSnapshots(dir: string): SnapshotMeta[] {
     .filter((n) => SNAPSHOT_RE.test(n))
     .map((n) => statMeta(path.join(dir, n)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** 一天的毫秒数，`ensureDailySnapshot` 的默认「新鲜窗口」。 */
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 最近 `withinMs` 毫秒内是否已有一份 `daily` 快照。
+ * 启动时用它判断「今天还要不要再备一次」——一天多次开关应用不会备出一堆。
+ * `now` 可注入，方便单测。
+ */
+export function hasRecentDailySnapshot(
+  dir: string,
+  withinMs: number,
+  now: number = Date.now(),
+): boolean {
+  return listSnapshots(dir).some(
+    (s) => s.kind === 'daily' && now - new Date(s.createdAt).getTime() < withinMs,
+  );
+}
+
+export interface EnsureDailyOptions {
+  dir: string;
+  /** 生成后按此份数轮换 `daily` 快照。 */
+  keep: number;
+  /** 「新鲜窗口」，默认 24 小时。 */
+  withinMs?: number;
+}
+
+/**
+ * 距上一份 `daily` 快照超过「新鲜窗口」就补一份，随后轮换。
+ * 已有近备时直接返回 `null`（不生成、不轮换）。
+ */
+export async function ensureDailySnapshot(
+  opts: EnsureDailyOptions,
+): Promise<SnapshotMeta | null> {
+  const withinMs = opts.withinMs ?? ONE_DAY_MS;
+  if (hasRecentDailySnapshot(opts.dir, withinMs)) return null;
+  const meta = await createSnapshot({ dir: opts.dir });
+  pruneSnapshots({ dir: opts.dir, keep: opts.keep });
+  return meta;
 }
 
 export interface PruneOptions {
