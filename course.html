@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>课程管理 · 晓·乐舞艺术空间</title>
+  <!-- 设计令牌 stylesheet — Createthisprojecta design system tokens -->
+  <link rel="stylesheet" href="colors_and_type.css">
+  <style>
+    /* ─── 令牌兜底（与 index.html / students.html / inventory.html / attendance.html 同一份）── */
+    :root {
+      --bg:      oklch(99.5% 0.003 15);
+      --surface: oklch(100% 0 0);
+      --fg:      oklch(14% 0.010 0);
+      --muted:   oklch(55% 0.008 0);
+      --border:  oklch(93% 0.004 0);
+      --accent:  oklch(57% 0.235 17);
+      --accent-soft: color-mix(in oklch, var(--accent) 10%, transparent);
+      --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+
+      --cc-1: oklch(68% 0.165 25);
+      --cc-2: oklch(65% 0.130 152);
+      --cc-3: oklch(63% 0.155 234);
+      --cc-4: oklch(62% 0.135 293);
+      --cc-5: oklch(73% 0.135 70);
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+
+      --radius:      12px;
+      --radius-lg:   18px;
+      --radius-pill: 999px;
+      --radius-mark: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100vh; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+    svg { display: block; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+
+    /* ─── 顶部导航 ── 整页仅品牌方块 + 主按钮两处 --accent，符合「每屏至多 2 次」 */
+    .topnav {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      backdrop-filter: blur(20px) saturate(1.6);
+      -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      border-bottom: 1px solid var(--border);
+    }
+    .topnav-inner {
+      max-width: 1120px; margin-inline: auto;
+      padding: 0 40px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 9px; }
+    .xhs-mark {
+      width: 28px; height: 28px;
+      background: var(--accent); border-radius: var(--radius-mark);
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    .xhs-mark svg { width: 15px; height: 15px; color: var(--surface); }
+    .nav-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+    .nav-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .nav-tab {
+      display: inline-flex; align-items: center;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      padding: 8px 12px; border-radius: var(--radius);
+      transition: color 0.15s, background 0.15s; cursor: pointer;
+    }
+    .nav-tab:hover { color: var(--fg); }
+    .nav-tab.on { color: var(--fg); background: color-mix(in oklch, var(--cc-3) 16%, var(--surface)); }
+    .nav-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav-back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      padding: 8px 6px; border-radius: var(--radius);
+      transition: color 0.15s;
+    }
+    .nav-back:hover { color: var(--fg); }
+    .nav-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav-back svg { width: 15px; height: 15px; }
+
+    /* ─── 主体容器 ── */
+    main { flex: 1; width: 100%; max-width: 1120px; margin-inline: auto; padding: 28px 40px 72px; }
+
+    .page-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .page-title { font-family: var(--font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+    .page-sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+
+    /* ─── 按钮 ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 44px; padding: 0 18px;
+      border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--surface); color: var(--fg);
+      font-weight: 600; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn:hover { border-color: var(--muted); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+    .btn-primary:hover { background: color-mix(in oklch, var(--accent) 88%, black); border-color: transparent; }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--fg); border-color: transparent; }
+    .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+    .btn-danger { color: color-mix(in oklch, var(--cc-1) 78%, black); }
+    .btn-danger:hover { border-color: color-mix(in oklch, var(--cc-1) 45%, var(--border)); }
+
+    /* ─── 列表工具条 ── */
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 16px; }
+    .toolbar-search {
+      flex: 1 1 220px; min-height: 44px; padding: 10px 14px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .toolbar-search:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .toolbar-select {
+      min-height: 44px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .toolbar-select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .toolbar-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .result-count { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+
+    /* ─── 卡片网格（班级 / 老师）── */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+    .entity-card {
+      text-align: left; width: 100%; font: inherit; color: inherit;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 16px 18px; cursor: pointer; transition: border-color 0.15s;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .entity-card:hover { border-color: var(--muted); }
+    .entity-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .entity-card .ec-name { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+    .entity-card .ec-meta { color: var(--muted); font-size: 13px; }
+    .entity-card .ec-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .count-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px; border-radius: var(--radius-pill);
+      font-size: 12px; font-weight: 600; background: var(--fg-soft);
+      font-variant-numeric: tabular-nums;
+    }
+    .count-pill.over { color: color-mix(in oklch, var(--cc-1) 78%, black); background: color-mix(in oklch, var(--cc-1) 12%, var(--surface)); }
+
+    .status-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 9px; border-radius: var(--radius-pill);
+      font-size: 12px; font-weight: 600; background: var(--fg-soft); color: var(--muted);
+    }
+    .status-tag .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--muted); }
+    .status-tag[data-status="在读"] .dot, .status-tag[data-status="在职"] .dot { background: var(--cc-2); }
+    .status-tag[data-status="停课"] .dot { background: var(--cc-5); }
+    .status-tag[data-status="结课"] .dot, .status-tag[data-status="离职"] .dot { background: var(--muted); }
+    .entity-card.off { opacity: 0.55; }
+
+    /* ─── 空态 ── */
+    .empty {
+      text-align: center; color: var(--muted);
+      padding: 64px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg);
+    }
+    .empty strong { display: block; color: var(--fg); font-size: 16px; margin-bottom: 6px; }
+
+    /* ─── 表单 ── */
+    .form-group {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px;
+    }
+    .form-group > .group-title { font-family: var(--font-display); font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .field .req { color: var(--accent); margin-left: 2px; }
+    .field input, .field select, .field textarea {
+      width: 100%; min-height: 44px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .field textarea { min-height: 72px; resize: vertical; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
+    }
+    .field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--accent); }
+    .field-error { color: var(--accent); font-size: 12px; margin-top: 5px; }
+    .field-hint { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+    /* ─── 预警条（--cc-1 暖红，不占 accent 额度）── */
+    .warn-banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; margin: 12px 0;
+      border: 1px solid color-mix(in oklch, var(--cc-1) 40%, var(--border));
+      background: color-mix(in oklch, var(--cc-1) 10%, var(--surface));
+      border-radius: var(--radius); font-size: 13px; font-weight: 600;
+    }
+    .warn-banner .dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--cc-1); }
+
+    /* ─── 搜索候选 ── */
+    .candidate-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 300px; overflow-y: auto; }
+    .candidate {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; min-height: 44px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit;
+    }
+    .candidate:hover { border-color: var(--muted); }
+    .candidate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .candidate .c-main { flex: 1; min-width: 0; }
+    .candidate .c-name { font-weight: 600; }
+    .candidate .c-sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    /* ─── 花名册 ── */
+    .roster-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .roster-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; min-height: 44px;
+      border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    }
+    .roster-item .r-main { flex: 1; min-width: 0; }
+    .roster-item .r-name { font-weight: 600; }
+    .roster-item .r-sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    /* ─── 抽屉（班级详情）── */
+    .drawer-mask {
+      position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 40%, transparent);
+      display: flex; justify-content: flex-end; z-index: 20;
+    }
+    .drawer {
+      background: var(--surface); width: 100%; max-width: 520px; height: 100%;
+      overflow-y: auto; padding: 24px 28px 60px;
+      box-shadow: -20px 0 60px -12px color-mix(in oklch, var(--fg) 30%, transparent);
+    }
+    .drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+    .drawer h3 { font-family: var(--font-display); margin: 0; font-size: 18px; }
+    .drawer .d-sub { color: var(--muted); font-size: 13px; margin: 2px 0 16px; }
+    .drawer-section { margin-top: 22px; }
+    .drawer-section > h4 { font-family: var(--font-display); font-size: 14px; margin: 0 0 10px; }
+
+    /* ─── 模态 ── */
+    .modal-mask {
+      position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 40%, transparent);
+      display: grid; place-items: center; padding: 20px; z-index: 30;
+    }
+    .modal {
+      background: var(--surface); border-radius: var(--radius-lg);
+      padding: 22px 24px; width: 100%; max-width: 460px;
+      max-height: calc(100vh - 40px); overflow-y: auto;
+      box-shadow: 0 20px 60px -12px color-mix(in oklch, var(--fg) 30%, transparent);
+    }
+    .modal h3 { font-family: var(--font-display); margin: 0 0 12px; font-size: 17px; }
+    .modal p { margin: 0 0 8px; }
+
+    /* ─── toast ── */
+    #toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+      background: var(--fg); color: var(--surface);
+      padding: 10px 18px; border-radius: var(--radius-pill);
+      font-size: 13px; font-weight: 600;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; z-index: 40;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ─── 周课表网格（#/timetable）── */
+    .tt-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+    .tt-col { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); min-height: 80px; padding: 8px; }
+    .tt-col > .tt-day { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 8px; text-align: center; }
+    .tt-col.today { border-color: color-mix(in oklch, var(--cc-3) 45%, var(--border)); }
+    .tt-col.today > .tt-day { color: color-mix(in oklch, var(--cc-3) 70%, black); }
+    .tt-slot {
+      display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+      border: 1px solid var(--border); border-left: 3px solid var(--cc-3);
+      border-radius: var(--radius-mark); background: color-mix(in oklch, var(--cc-3) 6%, var(--surface));
+      padding: 7px 9px; margin-bottom: 6px;
+    }
+    .tt-slot:hover { border-color: var(--muted); }
+    .tt-slot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .tt-slot .s-time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+    .tt-slot .s-name { font-weight: 600; font-size: 13px; }
+    .tt-slot .s-sub { font-size: 12px; color: var(--muted); }
+    .tt-slot.stopped { opacity: 0.5; text-decoration: line-through; }
+
+    /* ─── 月历（#/teacher-plan）── */
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-head { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; padding: 4px 0; }
+    .cal-cell {
+      border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+      min-height: 84px; padding: 6px 7px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .cal-cell.blank { background: transparent; border-color: transparent; }
+    .cal-cell .c-date { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .cal-cell.today .c-date { color: color-mix(in oklch, var(--cc-3) 70%, black); }
+    .cal-item {
+      display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+      border: 1px solid var(--border); border-radius: var(--radius-mark);
+      background: color-mix(in oklch, var(--cc-3) 6%, var(--surface));
+      padding: 4px 6px; font-size: 12px;
+    }
+    .cal-item:hover { border-color: var(--muted); }
+    .cal-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .cal-item .i-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+    .cal-item.stopped { opacity: 0.5; text-decoration: line-through; }
+
+    /* ─── 移动端按日期 / 星期的竖列表（timetable + teacher-plan 共用）── */
+    .day-list { display: flex; flex-direction: column; gap: 14px; }
+    .day-block { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; }
+    .day-block.today { border-color: color-mix(in oklch, var(--cc-3) 45%, var(--border)); }
+    .day-block > .db-head { font-family: var(--font-display); font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+
+    @media (max-width: 920px) {
+      .topnav-inner { padding-inline: 20px; flex-wrap: wrap; height: auto; gap: 6px; padding-block: 8px; }
+      main { padding-inline: 20px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .tt-grid, .cal-grid { display: none; }
+    }
+    @media (min-width: 921px) {
+      .day-list { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="nav-brand" href="index.html" aria-label="晓·乐舞艺术空间 首页">
+        <span class="xhs-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.5l2.4 6.7 6.9.3-5.4 4.3 1.9 6.7L12 17l-5.7 3.8 1.9-6.7L2.8 9.8l6.9-.3z"/>
+          </svg>
+        </span>
+        <span class="nav-title">晓·乐舞艺术空间</span>
+      </a>
+      <div class="nav-tabs" id="nav-tabs" role="tablist"></div>
+      <a class="nav-back" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+        返回首页
+      </a>
+    </div>
+  </nav>
+
+  <main>
+    <div id="view" aria-live="polite"></div>
+  </main>
+
+  <div id="toast" role="status"></div>
+
+  <script type="module" src="course.js"></script>
+</body>
+</html>

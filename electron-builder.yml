@@ -22,6 +22,8 @@ files:
   - inventory.js
   - attendance.html
   - attendance.js
+  - course.html
+  - course.js
   - colors_and_type.css
   - package.json
 
