@@ -9,15 +9,27 @@ import { dialog, ipcMain } from 'electron';
 import type {
   AllocationInput,
   AllocationListQuery,
+  AttendanceCorrectionInput,
+  AttendanceListQuery,
+  BatchCheckInInput,
   CustomFieldInput,
   CustomFieldPatch,
   InventoryItemInput,
   InventoryListQuery,
   IpcResult,
+  LessonAdjustmentInput,
   ListQuery,
+  QuickCheckInInput,
+  RosterCandidateQuery,
   StudentInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
+import {
+  validateAdjustment,
+  validateBatchCheckIn,
+  validateCorrection,
+  validateQuickCheckIn,
+} from '../domain/attendance.validation';
 import {
   buildItemTemplate,
   exportAllocations,
@@ -25,6 +37,12 @@ import {
   importItems,
   readItemsPreview,
 } from '../io/inventory-xlsx';
+import {
+  buildTemplate as buildAttendanceTemplate,
+  exportRecords,
+  importRecords,
+  readImportPreview as readAttendanceImportPreview,
+} from '../io/attendance-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
@@ -32,6 +50,7 @@ import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
 import * as inventoryRepo from '../domain/inventory.repo';
+import * as attendanceRepo from '../domain/attendance.repo';
 import { buildSchema, validateStudent } from '../domain/validation';
 import { exportStudents } from '../io/export-xlsx';
 import { buildTemplate, importStudents, readImportPreview } from '../io/import-xlsx';
@@ -293,6 +312,100 @@ export function registerIpc(): void {
     (args?: { filePath?: string; mapping?: Record<string, string> }) => {
       if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
       return importItems({ filePath: args.filePath, mapping: args.mapping ?? {} });
+    },
+  );
+
+  // —— 考勤管理 ——
+  handle(CH.attendanceList, (query?: AttendanceListQuery) =>
+    attendanceRepo.listRecords(query ?? {}),
+  );
+
+  handle(CH.attendanceRosterCandidates, (query?: RosterCandidateQuery) =>
+    attendanceRepo.listRosterCandidates(query ?? {}),
+  );
+
+  handle(CH.attendanceQuickCheckIn, (input?: QuickCheckInInput) => {
+    const { values, errors } = validateQuickCheckIn(input ?? ({} as QuickCheckInInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.createRecord(values);
+  });
+
+  handle(CH.attendanceBatchCheckIn, (input?: BatchCheckInInput) => {
+    const p = input ?? ({} as BatchCheckInInput);
+    if (!Array.isArray(p.entries) || p.entries.length === 0) {
+      throw new AppError('BAD_REQUEST', '请至少勾选一名学员');
+    }
+    const { values, errors } = validateBatchCheckIn(p);
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查点名信息', errors);
+    }
+    return attendanceRepo.batchCreate(values);
+  });
+
+  handle(CH.attendanceCorrect, (input?: AttendanceCorrectionInput) => {
+    const { values, errors } = validateCorrection(
+      input ?? ({} as AttendanceCorrectionInput),
+    );
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.correctRecord(values);
+  });
+
+  handle(CH.attendanceVoid, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少记录 id');
+    return attendanceRepo.voidRecord(Number(id));
+  });
+
+  handle(CH.attendanceAdjustLessons, (input?: LessonAdjustmentInput) => {
+    const { values, errors, deltaError } = validateAdjustment(
+      input ?? ({} as LessonAdjustmentInput),
+    );
+    if (deltaError) throw new AppError('INVALID_ADJUSTMENT', deltaError, { delta: deltaError });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.adjustLessons(values);
+  });
+
+  handle(CH.attendanceExport, async (query?: AttendanceListQuery) => {
+    const filePath = await pickSavePath('导出考勤记录', `考勤记录-${ymdCompact()}.xlsx`);
+    try {
+      const r = await exportRecords(query ?? {}, filePath);
+      return { filePath, ...r };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.attendanceDownloadTemplate, async () => {
+    const filePath = await pickSavePath('下载考勤导入模板', '考勤导入模板.xlsx');
+    try {
+      await buildAttendanceTemplate(filePath);
+      return { filePath };
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  });
+
+  handle(CH.attendancePickImportFile, async () => {
+    const filePath = await pickOpenPath('选择要导入的 Excel');
+    return readAttendanceImportPreview(filePath);
+  });
+
+  handle(
+    CH.attendanceImport,
+    (args?: { filePath?: string; mapping?: Record<string, string> }) => {
+      if (!args?.filePath) throw new AppError('BAD_REQUEST', '缺少文件路径');
+      return importRecords({ filePath: args.filePath, mapping: args.mapping ?? {} });
     },
   );
 }

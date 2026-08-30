@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>考勤管理 · 晓·乐舞艺术空间</title>
+  <!-- 设计令牌 stylesheet — Createthisprojecta design system tokens -->
+  <link rel="stylesheet" href="colors_and_type.css">
+  <style>
+    /* ─── 令牌兜底（与 index.html / students.html / inventory.html 同一份，保证多页视觉一致）── */
+    :root {
+      --bg:      oklch(99.5% 0.003 15);
+      --surface: oklch(100% 0 0);
+      --fg:      oklch(14% 0.010 0);
+      --muted:   oklch(55% 0.008 0);
+      --border:  oklch(93% 0.004 0);
+      --accent:  oklch(57% 0.235 17);
+      --accent-soft: color-mix(in oklch, var(--accent) 10%, transparent);
+      --fg-soft: color-mix(in oklch, var(--fg) 5%, transparent);
+
+      --cc-1: oklch(68% 0.165 25);
+      --cc-2: oklch(65% 0.130 152);
+      --cc-3: oklch(63% 0.155 234);
+      --cc-4: oklch(62% 0.135 293);
+      --cc-5: oklch(73% 0.135 70);
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                      'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+
+      --radius:      12px;
+      --radius-lg:   18px;
+      --radius-pill: 999px;
+      --radius-mark: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100vh; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+    }
+    svg { display: block; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+
+    /* ─── 顶部导航（复用 placeholder.html 的 .topnav 规范）─────────────────
+       整页仅品牌方块 + 主按钮两处使用 --accent，符合「每屏至多 2 次」。      */
+    .topnav {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in oklch, var(--surface) 88%, transparent);
+      backdrop-filter: blur(20px) saturate(1.6);
+      -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      border-bottom: 1px solid var(--border);
+    }
+    .topnav-inner {
+      max-width: 1120px; margin-inline: auto;
+      padding: 0 40px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 9px; }
+    .xhs-mark {
+      width: 28px; height: 28px;
+      background: var(--accent); border-radius: var(--radius-mark);
+      display: grid; place-items: center; flex-shrink: 0;
+    }
+    .xhs-mark svg { width: 15px; height: 15px; color: var(--surface); }
+    .nav-title { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+    .nav-tabs { display: flex; gap: 4px; }
+    .nav-tab {
+      display: inline-flex; align-items: center;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      padding: 8px 12px; border-radius: var(--radius);
+      transition: color 0.15s, background 0.15s; cursor: pointer;
+    }
+    .nav-tab:hover { color: var(--fg); }
+    .nav-tab.on { color: var(--fg); background: color-mix(in oklch, var(--cc-1) 14%, var(--surface)); }
+    .nav-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav-back {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600; color: var(--muted);
+      padding: 8px 6px; border-radius: var(--radius);
+      transition: color 0.15s;
+    }
+    .nav-back:hover { color: var(--fg); }
+    .nav-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .nav-back svg { width: 15px; height: 15px; }
+
+    /* ─── 主体容器 ─────────────────────────────────────────────────── */
+    main { flex: 1; width: 100%; max-width: 1120px; margin-inline: auto; padding: 28px 40px 72px; }
+
+    .page-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .page-title { font-family: var(--font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+    .page-sub { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+
+    /* ─── 按钮 ─────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 44px; padding: 0 18px;
+      border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--surface); color: var(--fg);
+      font-weight: 600; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .btn:hover { border-color: var(--muted); }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+    .btn-primary:hover { background: color-mix(in oklch, var(--accent) 88%, black); border-color: transparent; }
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--fg); border-color: transparent; }
+    .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+
+    /* ─── 列表工具条 ───────────────────────────────────────────────── */
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 16px; }
+    .toolbar-search {
+      flex: 1 1 220px; min-height: 44px; padding: 10px 14px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .toolbar-search:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .toolbar-select, .toolbar-date {
+      min-height: 44px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .toolbar-select:focus, .toolbar-date:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+    .toolbar-label { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .result-count { color: var(--muted); font-size: 13px; margin-left: auto; white-space: nowrap; }
+
+    /* ─── 流水表格 ─────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+    table.records { width: 100%; border-collapse: collapse; min-width: 960px; }
+    table.records th, table.records td {
+      text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border);
+      vertical-align: middle; white-space: nowrap;
+    }
+    table.records th { color: var(--muted); font-size: 12px; font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+    table.records tr:last-child td { border-bottom: 0; }
+    table.records tbody tr:hover td { background: color-mix(in oklch, var(--cc-1) 5%, var(--surface)); }
+    .cell-student { font-weight: 600; }
+    .cell-phone { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .cell-delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .cell-delta.minus { color: color-mix(in oklch, var(--cc-1) 75%, black); }
+    .cell-delta.plus  { color: color-mix(in oklch, var(--cc-2) 75%, black); }
+    .cell-note { white-space: normal; max-width: 220px; color: var(--muted); font-size: 13px; }
+
+    .type-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: var(--radius-pill);
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+      background: var(--fg-soft);
+    }
+    .type-pill .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--muted); }
+    .type-pill[data-type="出勤"] .dot { background: var(--cc-2); }
+    .type-pill[data-type="请假"] .dot { background: var(--cc-5); }
+    .type-pill[data-type="缺勤"] .dot { background: var(--cc-1); }
+    .type-pill[data-type="补课"] .dot { background: var(--cc-3); }
+    .type-pill[data-type="试听"] .dot { background: var(--cc-4); }
+    .type-pill[data-type="调整"] .dot { background: var(--fg); }
+
+    .row-ops { display: flex; gap: 4px; }
+
+    .load-more { display: flex; justify-content: center; margin-top: 16px; }
+
+    /* ─── 空态 ─────────────────────────────────────────────────────── */
+    .empty {
+      text-align: center; color: var(--muted);
+      padding: 64px 24px; border: 1px dashed var(--border); border-radius: var(--radius-lg);
+    }
+    .empty strong { display: block; color: var(--fg); font-size: 16px; margin-bottom: 6px; }
+
+    /* ─── 表单 ─────────────────────────────────────────────────────── */
+    .form-group {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px;
+    }
+    .form-group > .group-title {
+      font-family: var(--font-display); font-weight: 700; font-size: 15px;
+      padding: 0; margin-bottom: 14px;
+    }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+    .field { margin-bottom: 14px; }
+    .field:last-child { margin-bottom: 0; }
+    .field > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .field .req { color: var(--accent); margin-left: 2px; }
+    .field input, .field select, .field textarea {
+      width: 100%; min-height: 44px; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .field textarea { min-height: 72px; resize: vertical; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
+    }
+    .field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--accent); }
+    .field-error { color: var(--accent); font-size: 12px; margin-top: 5px; }
+    .field-hint { color: var(--muted); font-size: 12px; margin-top: 5px; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+    /* ─── 导入向导：列映射表 ───────────────────────────────────────── */
+    .map-table { width: 100%; border-collapse: collapse; }
+    .map-table th, .map-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .map-table th { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .map-table td:first-child { width: 40%; }
+    .map-table select { width: 100%; min-height: 40px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--fg); font: inherit; }
+    .form-group ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+
+    /* ─── 预警条（--cc-1 暖红，不占 accent 额度）────────────────────── */
+    .warn-banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px; margin: 12px 0;
+      border: 1px solid color-mix(in oklch, var(--cc-1) 40%, var(--border));
+      background: color-mix(in oklch, var(--cc-1) 10%, var(--surface));
+      border-radius: var(--radius); font-size: 13px; font-weight: 600;
+    }
+    .warn-banner .dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--cc-1); }
+
+    /* ─── 搜索候选 / 花名册 ───────────────────────────────────────── */
+    .candidate-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 320px; overflow-y: auto; }
+    .candidate {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; min-height: 44px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); cursor: pointer; text-align: left; width: 100%; font: inherit; color: inherit;
+    }
+    .candidate:hover { border-color: var(--muted); }
+    .candidate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .candidate.picked { border-color: color-mix(in oklch, var(--cc-1) 50%, var(--border)); background: color-mix(in oklch, var(--cc-1) 8%, var(--surface)); }
+    .candidate .c-main { flex: 1; min-width: 0; }
+    .candidate .c-name { font-weight: 600; }
+    .candidate .c-sub { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .candidate .c-bal { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; white-space: nowrap; }
+    .candidate .c-bal.low { color: color-mix(in oklch, var(--cc-1) 75%, black); }
+    .roster-row .state-group { display: flex; flex-wrap: wrap; gap: 6px; }
+    .state-btn {
+      min-height: 36px; padding: 0 12px; font-size: 13px; font-weight: 600;
+      border: 1px solid var(--border); border-radius: var(--radius-pill);
+      background: var(--surface); color: var(--muted); cursor: pointer;
+    }
+    .state-btn.on { color: var(--fg); background: color-mix(in oklch, var(--cc-1) 14%, var(--surface)); border-color: color-mix(in oklch, var(--cc-1) 45%, var(--border)); }
+    .state-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ─── 结果小结 ─────────────────────────────────────────────────── */
+    .summary-box {
+      border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: 14px 18px; margin-bottom: 16px; background: var(--surface);
+    }
+    .summary-box .sum-head { font-weight: 700; margin-bottom: 6px; }
+    .summary-box ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+
+    /* ─── 模态 ─────────────────────────────────────────────────────── */
+    .modal-mask {
+      position: fixed; inset: 0; background: color-mix(in oklch, var(--fg) 40%, transparent);
+      display: grid; place-items: center; padding: 20px; z-index: 20;
+    }
+    .modal {
+      background: var(--surface); border-radius: var(--radius-lg);
+      padding: 22px 24px; width: 100%; max-width: 440px;
+      box-shadow: 0 20px 60px -12px color-mix(in oklch, var(--fg) 30%, transparent);
+    }
+    .modal h3 { font-family: var(--font-display); margin: 0 0 10px; font-size: 17px; }
+    .modal p { margin: 0 0 8px; }
+
+    /* ─── toast ───────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+      background: var(--fg); color: var(--surface);
+      padding: 10px 18px; border-radius: var(--radius-pill);
+      font-size: 13px; font-weight: 600;
+      opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 920px) {
+      .topnav-inner { padding-inline: 20px; flex-wrap: wrap; height: auto; gap: 6px; padding-block: 8px; }
+      main { padding-inline: 20px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .roster-row { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="nav-brand" href="index.html" aria-label="晓·乐舞艺术空间 首页">
+        <span class="xhs-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.5l2.4 6.7 6.9.3-5.4 4.3 1.9 6.7L12 17l-5.7 3.8 1.9-6.7L2.8 9.8l6.9-.3z"/>
+          </svg>
+        </span>
+        <span class="nav-title">晓·乐舞艺术空间</span>
+      </a>
+      <div class="nav-tabs" id="nav-tabs" role="tablist"></div>
+      <a class="nav-back" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+        返回首页
+      </a>
+    </div>
+  </nav>
+
+  <main>
+    <div id="view" aria-live="polite"></div>
+  </main>
+
+  <div id="toast" role="status"></div>
+
+  <script type="module" src="attendance.js"></script>
+</body>
+</html>

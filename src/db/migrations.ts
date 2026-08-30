@@ -176,13 +176,62 @@ const v4 = (db: Database): void => {
 };
 
 /**
+ * v5：考勤管理模块的初始表结构。
+ *
+ * 版本号说明：v3 被并行的「学员班级字段」分支占用、v4 是库存两张表，考勤认领下一个空号 v5。
+ * 对停在 v2（只跑过学员）或 v4（跑过库存）的库，run() 只看 version > current，会把缺的版本
+ * 按序补齐——允许版本号有空档。DDL 一律 IF NOT EXISTS：历史原因重复触发也不炸。
+ * 合并顺序建议：feat/class-name-field(v3) → feat/inventory-management(v4) → 本分支(v5)。
+ *
+ * 一张表 attendance_records = 考勤流水账。一行 = 一次考勤事件（出勤/请假/缺勤/补课/试听）
+ * 或一次课时调整（type='调整'）。lessons_delta 是这一行对 students.remaining_lessons 的增量：
+ * 消耗为负、增加为正、不影响为 0。students.remaining_lessons 仍是「剩余课时」的权威缓存
+ * （列表 / 学员档案直接读它），不靠汇总流水实时算——与 inventory_items.quantity 同一套路。
+ *
+ * 不写 ON DELETE CASCADE：学员是软删除，删了也要能在流水 / 导出里查到历史。
+ * 连接级 PRAGMA foreign_keys=ON（见 connection.ts）下，这里的外键只保证「插入时 student_id 必须存在」。
+ * session_id 预留给将来的「课程安排」模块关联，本期恒为 NULL、不建外键（目标表尚不存在）。
+ *
+ * 不加 CHECK：
+ * - lessons_delta 正负零都合法；不为负由 domain 层 createRecord 的余额守卫保证（force 时故意允许欠课记负）。
+ * - type 的六个取值由 domain 校验层把关，和 students.status 无 CHECK 的现状一致。
+ */
+const v5 = (db: Database): void => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS attendance_records (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id    INTEGER NOT NULL REFERENCES students(id),
+      session_id    INTEGER,                          -- 预留关联「课程安排」，本期恒 NULL、无外键
+      class_name    TEXT,                             -- 自由文本课程名（快速打卡可空）
+      teacher       TEXT,                             -- 自由文本授课老师
+      attend_date   TEXT    NOT NULL,                 -- 'YYYY-MM-DD'，字典序即时间序
+      attend_time   TEXT,                             -- 'HH:MM'，可空
+      type          TEXT    NOT NULL,                 -- 出勤 | 请假 | 缺勤 | 补课 | 试听 | 调整
+      lessons_delta INTEGER NOT NULL DEFAULT 0,       -- 对 students.remaining_lessons 的增量
+      reason        TEXT,                             -- type='调整' 必填；其它可空
+      operator      TEXT,                             -- 经办人自由文本（无账号体系）
+      note          TEXT,
+      created_at    TEXT    NOT NULL,
+      updated_at    TEXT    NOT NULL,
+      deleted_at    TEXT                              -- 非空即已撤销
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_att_student ON attendance_records(student_id);
+    CREATE INDEX IF NOT EXISTS idx_att_date    ON attendance_records(attend_date);
+    CREATE INDEX IF NOT EXISTS idx_att_type    ON attendance_records(type);
+    CREATE INDEX IF NOT EXISTS idx_att_deleted ON attendance_records(deleted_at);
+  `);
+};
+
+/**
  * 全部迁移，按 version 升序。新增结构变更时往末尾追加。
- * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4，见 v4 注释）。
+ * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4 → 5，见各版注释）。
  */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
   { version: 2, up: v2 },
   { version: 4, up: v4 },
+  { version: 5, up: v5 },
 ];
 
 /** 当前代码期望的最高版本号。 */

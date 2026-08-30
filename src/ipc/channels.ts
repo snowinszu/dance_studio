@@ -48,6 +48,19 @@ export const CH = {
   inventoryDownloadTemplate: 'inventory:downloadTemplate',
   inventoryPickImportFile: 'inventory:pickImportFile',
   inventoryImportItems: 'inventory:importItems',
+
+  // 考勤管理
+  attendanceList: 'attendance:list',
+  attendanceQuickCheckIn: 'attendance:quickCheckIn',
+  attendanceBatchCheckIn: 'attendance:batchCheckIn',
+  attendanceRosterCandidates: 'attendance:rosterCandidates',
+  attendanceCorrect: 'attendance:correct',
+  attendanceVoid: 'attendance:void',
+  attendanceAdjustLessons: 'attendance:adjustLessons',
+  attendanceExport: 'attendance:export',
+  attendanceDownloadTemplate: 'attendance:downloadTemplate',
+  attendancePickImportFile: 'attendance:pickImportFile',
+  attendanceImport: 'attendance:import',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

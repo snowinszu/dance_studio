@@ -48,6 +48,17 @@ const CH = {
   inventoryDownloadTemplate: 'inventory:downloadTemplate',
   inventoryPickImportFile: 'inventory:pickImportFile',
   inventoryImportItems: 'inventory:importItems',
+  attendanceList: 'attendance:list',
+  attendanceQuickCheckIn: 'attendance:quickCheckIn',
+  attendanceBatchCheckIn: 'attendance:batchCheckIn',
+  attendanceRosterCandidates: 'attendance:rosterCandidates',
+  attendanceCorrect: 'attendance:correct',
+  attendanceVoid: 'attendance:void',
+  attendanceAdjustLessons: 'attendance:adjustLessons',
+  attendanceExport: 'attendance:export',
+  attendanceDownloadTemplate: 'attendance:downloadTemplate',
+  attendancePickImportFile: 'attendance:pickImportFile',
+  attendanceImport: 'attendance:import',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -107,6 +118,20 @@ const api = {
     downloadTemplate: () => invoke(CH.inventoryDownloadTemplate),
     pickImportFile: () => invoke(CH.inventoryPickImportFile),
     importItems: (args: unknown) => invoke(CH.inventoryImportItems, args),
+  },
+
+  attendance: {
+    list: (query?: unknown) => invoke(CH.attendanceList, query),
+    quickCheckIn: (input: unknown) => invoke(CH.attendanceQuickCheckIn, input),
+    batchCheckIn: (input: unknown) => invoke(CH.attendanceBatchCheckIn, input),
+    rosterCandidates: (query?: unknown) => invoke(CH.attendanceRosterCandidates, query),
+    correct: (input: unknown) => invoke(CH.attendanceCorrect, input),
+    voidRecord: (id: number) => invoke(CH.attendanceVoid, id),
+    adjustLessons: (input: unknown) => invoke(CH.attendanceAdjustLessons, input),
+    export: (query?: unknown) => invoke(CH.attendanceExport, query),
+    downloadTemplate: () => invoke(CH.attendanceDownloadTemplate),
+    pickImportFile: () => invoke(CH.attendancePickImportFile),
+    import: (args: unknown) => invoke(CH.attendanceImport, args),
   },
 };
 

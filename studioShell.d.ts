@@ -8,6 +8,13 @@ import type {
   AllocationInput,
   AllocationListQuery,
   AllocationListResult,
+  AttendanceCorrectionInput,
+  AttendanceImportReport,
+  AttendanceListQuery,
+  AttendanceListResult,
+  BatchCheckInInput,
+  BatchCheckInResult,
+  CheckInResult,
   CustomFieldDef,
   CustomFieldInput,
   CustomFieldPatch,
@@ -18,8 +25,12 @@ import type {
   InventoryListQuery,
   InventoryListResult,
   IpcResult,
+  LessonAdjustmentInput,
   ListQuery,
   ListResult,
+  QuickCheckInInput,
+  RosterCandidate,
+  RosterCandidateQuery,
   SchemaGroup,
   Student,
   StudentInput,
@@ -99,6 +110,31 @@ declare global {
         filePath: string;
         mapping: Record<string, string>;
       }): Promise<IpcResult<InventoryImportReport>>;
+    };
+
+    attendance: {
+      list(query?: AttendanceListQuery): Promise<IpcResult<AttendanceListResult>>;
+      quickCheckIn(input: QuickCheckInInput): Promise<IpcResult<CheckInResult>>;
+      batchCheckIn(input: BatchCheckInInput): Promise<IpcResult<BatchCheckInResult>>;
+      rosterCandidates(
+        query?: RosterCandidateQuery,
+      ): Promise<IpcResult<RosterCandidate[]>>;
+      correct(input: AttendanceCorrectionInput): Promise<IpcResult<CheckInResult>>;
+      voidRecord(
+        id: number,
+      ): Promise<IpcResult<{ id: number; studentId: number; remainingLessons: number }>>;
+      adjustLessons(input: LessonAdjustmentInput): Promise<IpcResult<CheckInResult>>;
+      export(query?: AttendanceListQuery): Promise<
+        IpcResult<{ filePath: string; detail: number; summary: number }>
+      >;
+      downloadTemplate(): Promise<IpcResult<{ filePath: string }>>;
+      pickImportFile(): Promise<
+        IpcResult<{ filePath: string; headers: string[]; sample: string[][] }>
+      >;
+      import(args: {
+        filePath: string;
+        mapping: Record<string, string>;
+      }): Promise<IpcResult<AttendanceImportReport>>;
     };
   }
 
