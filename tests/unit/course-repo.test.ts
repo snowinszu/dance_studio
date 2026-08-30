@@ -11,6 +11,7 @@ import * as repo from '../../src/domain/course.repo';
 import {
   todayYmd,
   validateClass,
+  validateSchedule,
   type TeacherValues,
   validateTeacher,
 } from '../../src/domain/course.validation';
@@ -189,4 +190,32 @@ test('rosterAdd 学员不存在 → NOT_FOUND；班不存在 → CLASS_NOT_FOUND
     () => addRoster(777777, seedStudent()),
     (e: unknown) => (e as { code?: string }).code === 'CLASS_NOT_FOUND',
   );
+});
+
+test('weeklyTimetable：JOIN 出班名 / 生效老师 / 在册人数；结课班与软删班不出现；按 weekday,start_time 排', () => {
+  const sched = (classId: number, weekday: number, s: string, e: string) => {
+    const { values } = validateSchedule({ classId, weekday, startTime: s, endTime: e });
+    repo.scheduleCreate(values);
+  };
+  const t = repo.teacherCreate(mkTeacher({ name: '周表老师' }));
+  const c1 = repo.classCreate(mkClass({ name: '周表在读', danceType: '周表舞', teacherId: t.id }));
+  const c2 = repo.classCreate(mkClass({ name: '周表结课', danceType: '周表舞', status: '结课' }));
+  const c3 = repo.classCreate(mkClass({ name: '周表软删', danceType: '周表舞' }));
+  addRoster(c1.id, seedStudent());
+  addRoster(c1.id, seedStudent());
+  sched(c1.id, 5, '19:00', '20:00');
+  sched(c1.id, 2, '10:00', '11:00');
+  sched(c2.id, 3, '19:00', '20:00');
+  sched(c3.id, 4, '19:00', '20:00');
+  repo.classSoftDelete(c3.id);
+
+  const rows = repo.weeklyTimetable({ danceType: '周表舞' });
+  assert.equal(rows.length, 2, '只留在读班 c1 的两条规则');
+  assert.deepEqual(rows.map((r) => [r.weekday, r.startTime]), [[2, '10:00'], [5, '19:00']]);
+  assert.equal(rows[0]?.className, '周表在读');
+  assert.equal(rows[0]?.teacherName, '周表老师');
+  assert.equal(rows[0]?.activeRosterCount, 2);
+
+  assert.equal(repo.weeklyTimetable({ danceType: '周表舞', teacherId: t.id }).length, 2);
+  assert.equal(repo.weeklyTimetable({ danceType: '周表舞', teacherId: 999999 }).length, 0);
 });

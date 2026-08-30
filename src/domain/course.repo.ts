@@ -21,6 +21,8 @@ import type {
   RosterMutationResult,
   ScheduleConflict,
   Teacher,
+  WeeklyTimetableEntry,
+  WeeklyTimetableQuery,
 } from '../shared/types';
 import type {
   ClassValues,
@@ -533,4 +535,39 @@ export function scheduleSoftDelete(id: number): { id: number } {
     id,
   });
   return { id };
+}
+
+/**
+ * 「课程表」周视图：所有未软删班（status != 结课）的未软删周期规则，JOIN 出班名 /
+ * 舞种 / 级别 / 生效老师姓名 / 生效教室 / 在册人数。按 weekday, start_time, 班名 排序。
+ */
+export function weeklyTimetable(query: WeeklyTimetableQuery = {}): WeeklyTimetableEntry[] {
+  const where = ["sch.deleted_at IS NULL", "c.deleted_at IS NULL", "c.status != '结课'"];
+  const params: Record<string, string | number> = {};
+  const dance = (query.danceType ?? '').trim();
+  if (dance) {
+    where.push('c.dance_type = @dance');
+    params['dance'] = dance;
+  }
+  if (Number.isInteger(query.teacherId)) {
+    where.push('COALESCE(sch.teacher_id, c.teacher_id) = @tid');
+    params['tid'] = query.teacherId as number;
+  }
+  return getDb()
+    .prepare(
+      `SELECT sch.id AS scheduleId, sch.class_id AS classId, c.name AS className,
+              c.dance_type AS danceType, c.level, sch.weekday,
+              sch.start_time AS startTime, sch.end_time AS endTime,
+              COALESCE(sch.teacher_id, c.teacher_id) AS teacherId,
+              t.name AS teacherName,
+              COALESCE(NULLIF(sch.room, ''), c.room) AS room,
+              (SELECT COUNT(*) FROM class_students cs
+                WHERE cs.class_id = c.id AND cs.left_at IS NULL) AS activeRosterCount
+         FROM class_schedules sch
+         JOIN classes c ON c.id = sch.class_id
+         LEFT JOIN teachers t ON t.id = COALESCE(sch.teacher_id, c.teacher_id)
+        WHERE ${where.join(' AND ')}
+        ORDER BY sch.weekday, sch.start_time, c.name COLLATE NOCASE`,
+    )
+    .all(params) as WeeklyTimetableEntry[];
 }

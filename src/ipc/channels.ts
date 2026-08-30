@@ -81,6 +81,9 @@ export const CH = {
   courseScheduleCreate: 'course:scheduleCreate',
   courseScheduleUpdate: 'course:scheduleUpdate',
   courseScheduleDelete: 'course:scheduleDelete',
+
+  // 课程管理 —— 课程表 / 排课
+  courseWeeklyTimetable: 'course:weeklyTimetable',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

@@ -637,19 +637,257 @@ function openTeacherForm(existing) {
   });
 }
 
-/* ═════════════════════════ 占位视图（#50 / #52 替换） ═════════════════════════ */
+/* ═════════════════════════ #/timetable（学生向课程表 · 周视图） ═════════════════════════ */
 
-function renderTimetablePlaceholder() {
+const ttState = { danceType: '', teacherId: '' };
+
+async function renderTimetable() {
   renderTabs('#/timetable');
-  view.replaceChildren(
+  view.replaceChildren(el('div', { class: 'empty', text: '加载中…' }));
+  await loadTeachers();
+
+  const query = {};
+  if (ttState.danceType) query.danceType = ttState.danceType;
+  if (ttState.teacherId) query.teacherId = Number(ttState.teacherId);
+  const rows = unwrap(await shell.course.weeklyTimetable(query));
+
+  const danceTypes = [...new Set(rows.map((r) => r.danceType).filter(Boolean))].sort();
+  const todayW = new Date().getDay();
+
+  const head = el(
+    'div',
+    { class: 'page-head' },
     el(
       'div',
-      { class: 'empty' },
-      el('strong', { text: '课程表' }),
-      '周期课表的周视图将在后续版本接入。',
+      {},
+      el('h1', { class: 'page-title', text: '课程表' }),
+      el('p', { class: 'page-sub', text: '每周固定课 · 点一节看班级与花名册' }),
     ),
   );
+
+  const danceSel = el(
+    'select',
+    { class: 'toolbar-select', onchange: (e) => ((ttState.danceType = e.target.value), renderTimetable()) },
+    el('option', { value: '', text: '全部舞种' }),
+    ...danceTypes.map((s) => el('option', { value: s, text: s, selected: s === ttState.danceType || undefined })),
+  );
+  const teacherSel = el(
+    'select',
+    { class: 'toolbar-select', onchange: (e) => ((ttState.teacherId = e.target.value), renderTimetable()) },
+    el('option', { value: '', text: '全部老师' }),
+    ...teacherCache.map((t) =>
+      el('option', { value: String(t.id), text: t.name, selected: String(t.id) === ttState.teacherId || undefined }),
+    ),
+  );
+  const toolbar = el(
+    'div',
+    { class: 'toolbar' },
+    danceSel,
+    teacherSel,
+    el('span', { class: 'result-count', text: `共 ${rows.length} 节固定课` }),
+  );
+
+  if (rows.length === 0) {
+    view.replaceChildren(
+      head,
+      toolbar,
+      el(
+        'div',
+        { class: 'empty' },
+        el('strong', { text: '还没有排固定课' }),
+        '去「班级」里挑一个班，给它加「每周几 + 时间」的周期规则。',
+      ),
+    );
+    return;
+  }
+
+  const dayRows = (w) => rows.filter((r) => r.weekday === w);
+
+  // 桌面 7 列网格
+  const grid = el(
+    'div',
+    { class: 'tt-grid' },
+    ...WEEKDAY_LABELS.map((label, w) =>
+      el(
+        'div',
+        { class: 'tt-col' + (w === todayW ? ' today' : '') },
+        el('div', { class: 'tt-day', text: label }),
+        ...dayRows(w).map((r) => ttSlot(r)),
+      ),
+    ),
+  );
+
+  // 移动端竖列表：今天置顶
+  const order = [todayW, ...WEEKDAY_LABELS.map((_, i) => i).filter((i) => i !== todayW)];
+  const list = el(
+    'div',
+    { class: 'day-list' },
+    ...order
+      .filter((w) => dayRows(w).length > 0)
+      .map((w) =>
+        el(
+          'div',
+          { class: 'day-block' + (w === todayW ? ' today' : '') },
+          el('div', { class: 'db-head', text: WEEKDAY_LABELS[w] + (w === todayW ? ' · 今天' : '') }),
+          ...dayRows(w).map((r) => ttSlot(r)),
+        ),
+      ),
+  );
+
+  view.replaceChildren(head, toolbar, grid, list);
 }
+
+function ttSlot(r) {
+  return el(
+    'button',
+    { class: 'tt-slot', onclick: () => openScheduleDetail(r) },
+    el('div', { class: 's-time', text: `${r.startTime}–${r.endTime}` }),
+    el('div', { class: 's-name', text: r.className }),
+    el('div', {
+      class: 's-sub',
+      text: [r.teacherName, r.room && `教室 ${r.room}`, `在册 ${r.activeRosterCount}`].filter(Boolean).join(' · '),
+    }),
+  );
+}
+
+async function openScheduleDetail(entry) {
+  const rosterWrap = el('div', { class: 'roster-list' }, el('div', { class: 'field-hint', text: '加载花名册…' }));
+  const { modal } = openModal(`${entry.className} · ${WEEKDAY_LABELS[entry.weekday]} ${entry.startTime}–${entry.endTime}`, [
+    el(
+      'p',
+      {},
+      [entry.danceType, entry.level].filter(Boolean).join(' · ') +
+        (entry.teacherName ? ` · ${entry.teacherName}` : '') +
+        (entry.room ? ` · 教室 ${entry.room}` : ''),
+    ),
+    rosterWrap,
+    el(
+      'div',
+      { class: 'form-actions', style: 'justify-content:flex-start' },
+      el('button', { class: 'btn btn-sm', onclick: () => openScheduleForm(entry.classId, entry) }, '编辑规则'),
+      el('button', { class: 'btn btn-sm', onclick: () => openScheduleForm(entry.classId, null) }, '新增规则'),
+      el(
+        'button',
+        {
+          class: 'btn btn-sm btn-danger',
+          onclick: async () => {
+            if (!confirm('删除这条周期规则？已生成的排课实例不受影响。')) return;
+            try {
+              unwrap(await shell.course.scheduleDelete(entry.scheduleId));
+              closeOverlays();
+              toast('规则已删除');
+              renderTimetable();
+            } catch (e) {
+              toast(e.message);
+            }
+          },
+        },
+        '删除规则',
+      ),
+    ),
+  ]);
+  try {
+    const roster = unwrap(await shell.course.rosterList(entry.classId));
+    rosterWrap.replaceChildren(
+      ...(roster.length
+        ? roster.map((m) =>
+            el(
+              'div',
+              { class: 'roster-item' },
+              el(
+                'div',
+                { class: 'r-main' },
+                el('div', { class: 'r-name', text: m.name }),
+                el('div', { class: 'r-sub', text: `${m.phone} · 剩 ${m.remainingLessons ?? 0} 节` }),
+              ),
+            ),
+          )
+        : [el('div', { class: 'field-hint', text: '这个班还没有学员。' })]),
+    );
+  } catch (e) {
+    rosterWrap.replaceChildren(el('div', { class: 'field-hint', text: e.message }));
+  }
+  void modal;
+}
+
+function openScheduleForm(classId, existing) {
+  const isEdit = !!existing;
+  const f = {};
+  f.weekday = field('星期', {
+    type: 'select',
+    value: existing ? String(existing.weekday) : String(new Date().getDay()),
+    options: WEEKDAY_LABELS.map((label, w) => ({ value: String(w), label })),
+  });
+  f.startTime = field('开始', { type: 'time', value: existing?.startTime ?? '19:00' });
+  f.endTime = field('结束', { type: 'time', value: existing?.endTime ?? '20:00' });
+  f.teacherId = field('老师', {
+    type: 'select',
+    value: existing?.teacherId != null ? String(existing.teacherId) : '',
+    options: [
+      { value: '', label: '（跟随班主教）' },
+      ...teacherCache.map((t) => ({ value: String(t.id), label: t.name })),
+    ],
+  });
+  f.room = field('教室', { value: existing?.room ?? '', hint: '留空则跟随班级教室' });
+  const fieldMap = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.wrap]));
+
+  const banner = el('div', {});
+  const submit = el('button', { class: 'btn btn-primary' }, isEdit ? '保存' : '新增');
+  const { close } = openModal(isEdit ? '编辑周期规则' : '新增周期规则', [
+    el('div', { class: 'field-grid' }, f.weekday.wrap, f.startTime.wrap, f.endTime.wrap, f.teacherId.wrap),
+    f.room.wrap,
+    banner,
+  ], [el('button', { class: 'btn', onclick: () => close() }, '取消'), submit]);
+
+  submit.addEventListener('click', async () => {
+    const input = {
+      classId,
+      weekday: Number(f.weekday.input.value),
+      startTime: f.startTime.input.value,
+      endTime: f.endTime.input.value,
+      teacherId: f.teacherId.input.value ? Number(f.teacherId.input.value) : null,
+      room: f.room.input.value.trim() || null,
+    };
+    submit.disabled = true;
+    banner.replaceChildren();
+    try {
+      const res = isEdit
+        ? unwrap(await shell.course.scheduleUpdate(existing.scheduleId, input))
+        : unwrap(await shell.course.scheduleCreate(input));
+      if (res.conflicts && res.conflicts.length) {
+        // 冲突非阻断：规则已保存，仅提示
+        banner.replaceChildren(
+          el(
+            'div',
+            { class: 'warn-banner' },
+            el('span', { class: 'dot' }),
+            `已保存，但与 ${res.conflicts
+              .map((c) => `${c.label}（${c.kind}冲突 ${c.startTime}–${c.endTime}）`)
+              .join('、')} 时段重叠`,
+          ),
+        );
+        submit.textContent = '知道了';
+        submit.disabled = false;
+        submit.onclick = () => {
+          close();
+          renderTimetable();
+        };
+        return;
+      }
+      close();
+      toast(isEdit ? '规则已保存' : '规则已新增');
+      renderTimetable();
+    } catch (e) {
+      submit.disabled = false;
+      if (e.code === 'VALIDATION_FAILED') paintErrors(fieldMap, e.fields);
+      else if (e.code === 'INVALID_WEEKDAY') paintErrors(fieldMap, { weekday: e.message });
+      else if (e.code === 'INVALID_TIME_RANGE') paintErrors(fieldMap, { endTime: e.message });
+      else toast(e.message);
+    }
+  });
+}
+
+/* ═════════════════════════ 占位视图（#52 替换） ═════════════════════════ */
 
 function renderTeacherPlanPlaceholder() {
   renderTabs('#/teacher-plan');
@@ -677,7 +915,7 @@ function route() {
       });
 
   if (hash.startsWith('#/teachers')) run(renderTeachers);
-  else if (hash.startsWith('#/timetable')) run(renderTimetablePlaceholder);
+  else if (hash.startsWith('#/timetable')) run(renderTimetable);
   else if (hash.startsWith('#/teacher-plan')) run(renderTeacherPlanPlaceholder);
   else run(renderClasses);
 }

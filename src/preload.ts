@@ -75,6 +75,7 @@ const CH = {
   courseScheduleCreate: 'course:scheduleCreate',
   courseScheduleUpdate: 'course:scheduleUpdate',
   courseScheduleDelete: 'course:scheduleDelete',
+  courseWeeklyTimetable: 'course:weeklyTimetable',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -167,6 +168,7 @@ const api = {
     scheduleCreate: (input: unknown) => invoke(CH.courseScheduleCreate, input),
     scheduleUpdate: (id: number, input: unknown) => invoke(CH.courseScheduleUpdate, id, input),
     scheduleDelete: (id: number) => invoke(CH.courseScheduleDelete, id),
+    weeklyTimetable: (query?: unknown) => invoke(CH.courseWeeklyTimetable, query),
   },
 };
 

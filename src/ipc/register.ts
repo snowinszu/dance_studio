@@ -28,6 +28,7 @@ import type {
   RosterRemoveInput,
   StudentInput,
   TeacherInput,
+  WeeklyTimetableQuery,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
 import {
@@ -532,4 +533,9 @@ export function registerIpc(): void {
     if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少规则 id');
     return courseRepo.scheduleSoftDelete(Number(id));
   });
+
+  // —— 课程管理：课程表（周视图） ——
+  handle(CH.courseWeeklyTimetable, (query?: WeeklyTimetableQuery) =>
+    courseRepo.weeklyTimetable(query ?? {}),
+  );
 }

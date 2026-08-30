@@ -46,6 +46,8 @@ import type {
   Tag,
   Teacher,
   TeacherInput,
+  WeeklyTimetableEntry,
+  WeeklyTimetableQuery,
 } from './src/shared/types';
 
 declare global {
@@ -176,6 +178,9 @@ declare global {
         input: ClassScheduleInput,
       ): Promise<IpcResult<ScheduleMutationResult>>;
       scheduleDelete(id: number): Promise<IpcResult<{ id: number }>>;
+      weeklyTimetable(
+        query?: WeeklyTimetableQuery,
+      ): Promise<IpcResult<WeeklyTimetableEntry[]>>;
     };
   }
 
