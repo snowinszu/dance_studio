@@ -90,6 +90,15 @@ export const CH = {
   courseSessionCreate: 'course:sessionCreate',
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',
+
+  // 数据报表（纯只读聚合）
+  reportsOverview: 'reports:overview',
+  reportsAlerts: 'reports:alerts',
+  reportsAttendanceStats: 'reports:attendanceStats',
+  reportsCourseStats: 'reports:courseStats',
+  reportsStudentStats: 'reports:studentStats',
+  reportsInventoryStats: 'reports:inventoryStats',
+  reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

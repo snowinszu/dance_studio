@@ -82,6 +82,13 @@ const CH = {
   courseSessionCreate: 'course:sessionCreate',
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',
+  reportsOverview: 'reports:overview',
+  reportsAlerts: 'reports:alerts',
+  reportsAttendanceStats: 'reports:attendanceStats',
+  reportsCourseStats: 'reports:courseStats',
+  reportsStudentStats: 'reports:studentStats',
+  reportsInventoryStats: 'reports:inventoryStats',
+  reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -181,6 +188,20 @@ const api = {
     sessionCreate: (input: unknown) => invoke(CH.courseSessionCreate, input),
     sessionUpdate: (input: unknown) => invoke(CH.courseSessionUpdate, input),
     sessionDelete: (id: number) => invoke(CH.courseSessionDelete, id),
+  },
+
+  // 数据报表：纯只读聚合。频道随各指标区 issue 逐个接入。
+  reports: {
+    overview: (range: { from: string; to: string }) => invoke(CH.reportsOverview, range),
+    alerts: () => invoke(CH.reportsAlerts),
+    attendanceStats: (range: { from: string; to: string }) =>
+      invoke(CH.reportsAttendanceStats, range),
+    courseStats: (range: { from: string; to: string }) => invoke(CH.reportsCourseStats, range),
+    studentStats: (range: { from: string; to: string }) => invoke(CH.reportsStudentStats, range),
+    inventoryStats: (range: { from: string; to: string }) =>
+      invoke(CH.reportsInventoryStats, range),
+    exportAttendanceByClass: (year: number) =>
+      invoke(CH.reportsExportAttendanceByClass, { year }),
   },
 };
 

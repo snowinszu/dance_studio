@@ -300,7 +300,10 @@ export type IpcErrorCode =
   /** 时间格式非法或 end_time <= start_time */
   | 'INVALID_TIME_RANGE'
   /** weekday 非 0–6 整数 */
-  | 'INVALID_WEEKDAY';
+  | 'INVALID_WEEKDAY'
+  // —— 数据报表 ——
+  /** 所选年份没有排课班级，也没有学员考勤记录，无可导出数据 */
+  | 'REPORT_EMPTY';
 
 // ===========================================================================
 // 库存管理模块
@@ -910,4 +913,168 @@ export interface SessionMutationResult {
 export interface GenerateMonthResult {
   /** 本次新物化的实例数 */
   created: number;
+}
+
+/* ───────────────────────── 数据报表（纯只读聚合）───────────────────────── */
+
+/**
+ * 报表统计区间。两端闭区间，'YYYY-MM-DD'。
+ * 页面把「本月 / 本年 / 自定义」换算成显式日期串后传给主进程；主进程不认 preset 枚举。
+ */
+export interface ReportRange {
+  from: string;
+  to: string;
+}
+
+/** 报表页顶部的概览卡片。 */
+export interface ReportOverview {
+  /** 在读学员数（status='在读'，未软删） */
+  activeStudents: number;
+  /** 区间内出勤人次（type 出勤 / 补课，未撤销） */
+  checkInsInRange: number;
+  /** 区间内正常课节数（status='正常'，未软删） */
+  sessionsInRange: number;
+  /** 近 30 天新登记学员（enroll_date >= 今天-30，含当天） */
+  newStudentsLast30d: number;
+  /** 在读且剩余课时 <= 3 */
+  lowBalanceCount: number;
+  /** 未软删物件且库存 <= 预警阈值 */
+  lowStockCount: number;
+  /** 当年（取 to 的年份）session_id 为空的出勤 / 补课条数——进不了「按班级」导出的提示值 */
+  unlinkedCheckInsThisYear: number;
+}
+
+/**
+ * 预警中心的四组清单。窗口是固定常量（不跟随页面时间范围）；每组最多 200 行。
+ */
+export interface ReportAlerts {
+  /** 库存 <= 预警阈值的物件，最紧缺在前 */
+  lowStock: { id: number; name: string; quantity: number; threshold: number }[];
+  /** 在读且剩余课时 <= 3 的学员 */
+  lowBalance: { id: number; name: string; remainingLessons: number }[];
+  /** 在读、未软删，近 60 天无「出勤」记录；lastAttendDate 为历来最近一次出勤日期（可能无） */
+  dormant: { id: number; name: string; lastAttendDate: string | null }[];
+  /** 近 30 天内、已发生、正常、关联出勤/补课人次为 0 的课节 */
+  emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
+}
+
+/** 考勤指标区。 */
+export interface ReportAttendanceStats {
+  /** 本月课节数（该月 1 号 → to，正常、未软删） */
+  sessionsThisMonth: number;
+  /** 本年课节数（该年 1/1 → to） */
+  sessionsThisYear: number;
+  /** 月度出勤人次（出勤+补课），'YYYY-MM' 升序，repo 已补齐区间内每个月（缺月为 0） */
+  monthlyCheckIns: { month: string; count: number }[];
+  /** 出勤排名（区间内有任意考勤记录的学员）。渲染层按 attendCount 或 rate 排序。 */
+  ranking: {
+    studentId: number;
+    name: string;
+    /** 出勤 + 补课 —— 「按次数」列 */
+    attendCount: number;
+    /** 出勤 —— 出勤率的分子 */
+    attendOnly: number;
+    /** 出勤 + 缺勤 + 请假 —— 出勤率的分母 */
+    scheduled: number;
+    /** attendOnly / scheduled；分母为 0 时为 null */
+    rate: number | null;
+  }[];
+  /** 近 30 天缺勤 + 请假最多的前 10 名 */
+  absenceTop: { studentId: number; name: string; absentPlusLeave: number }[];
+  /** 按 attendance_records.teacher 分组的出勤人次；空值归「未记录」 */
+  byTeacher: { teacher: string; checkIns: number }[];
+  /** 按 attendance_records.class_name 分组的出勤人次；空值归「未记录」 */
+  byDanceType: { danceType: string; checkIns: number }[];
+  /** 星期(0=周日..6) × 2 小时时段桶(0..11) 的出勤人次；attend_time 为空 → bucket=-1 */
+  hourHeatmap: { weekday: number; bucket: number; count: number }[];
+}
+
+/** 课程指标区。 */
+export interface ReportCourseStats {
+  /** 区间内正常课节，按老师分组的课节数与总时长（分钟）；teacher_id 为空 → 「未指定」；按时长降序 */
+  teacherLoad: {
+    teacherId: number | null;
+    teacherName: string;
+    sessionCount: number;
+    minutes: number;
+  }[];
+  /** 区间内未软删课节的停课占比；rate 分母（正常+停课）为 0 时为 null */
+  cancelRate: { normal: number; cancelled: number; rate: number | null };
+  /** 每个未结课班级的「在册人数 ÷ capacity」；capacity 缺失或 <=0 → rate 为 null */
+  classFillRate: {
+    classId: number;
+    className: string;
+    enrolled: number;
+    capacity: number | null;
+    rate: number | null;
+  }[];
+  /** 区间内、已发生、正常、关联出勤/补课人次为 0 的课节 */
+  emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
+}
+
+/** 学员指标区。 */
+export interface ReportStudentStats {
+  /** 按 status 分组计数（排除软删） */
+  statusDist: { status: string; count: number }[];
+  /** 舞种分布（dance_types JSON 数组展开）；一名多舞种学员计入多个 danceType */
+  danceTypeDist: { danceType: string; count: number }[];
+  /** 按 current_level 分组，空值归「未分级」 */
+  levelDist: { level: string; count: number }[];
+  /** 按 enroll_date 自然月分组的新登记数，'YYYY-MM' 升序，repo 已补齐每个月（缺月为 0） */
+  monthlyNew: { month: string; count: number }[];
+  /** 按 referrer 分组计数前 10（空值不计） */
+  referrerTop: { referrer: string; count: number }[];
+  /** 在读且剩余课时 <= 3（与预警中心同口径） */
+  lowBalance: { id: number; name: string; remainingLessons: number }[];
+  /** 在读、未软删，近 60 天无「出勤」（与预警中心同口径） */
+  dormant: { id: number; name: string; lastAttendDate: string | null }[];
+}
+
+/** 库存指标区。 */
+export interface ReportInventoryStats {
+  /** 库存 <= 阈值的物件（同预警中心口径），最紧缺在前 */
+  lowStock: { id: number; name: string; quantity: number; threshold: number }[];
+  /** 未软删物件的品类数与件数合计 */
+  totals: { itemKinds: number; totalQuantity: number };
+  /** 按 claimed_at 自然月分组的领用件数，'YYYY-MM' 升序，repo 已补齐每个月（缺月为 0） */
+  monthlyAllocations: { month: string; quantity: number }[];
+  /** 区间内按物件分组的领用件数前 10 */
+  topItems: { itemId: number; name: string; quantity: number }[];
+  /** 区间内按学员分组的领用件数前 10 */
+  topStudents: { studentId: number; name: string; quantity: number }[];
+  /** 未软删、在库 > 0、近 90 天无领用；lastClaimedAt 为历来最近一次领用日期（可能无） */
+  staleItems: { id: number; name: string; quantity: number; lastClaimedAt: string | null }[];
+}
+
+/* ── 按班级导出的出勤矩阵（供 io/reports-xlsx 组表）── */
+
+export interface ClassMatrixRow {
+  studentId: number;
+  /** 不含「（已离班）」后缀，后缀在 io 层拼 */
+  studentName: string;
+  /** 该班花名册里 left_at 非空（曾离班且无在册记录）；全校汇总恒 false */
+  left: boolean;
+  /** 长度 12：各月「出勤 + 补课」次数 */
+  monthly: number[];
+  /** monthly 之和 */
+  yearTotal: number;
+  /** 长度 12：各月「出勤 + 缺勤 + 请假」（标黄分母） */
+  monthlyScheduled: number[];
+  /** 长度 12：各月「缺勤」（标黄分子） */
+  monthlyAbsent: number[];
+}
+
+export interface ClassMatrixBlock {
+  /** null = 全校汇总 */
+  classId: number | null;
+  /** 全校汇总固定 '全校汇总' */
+  className: string;
+  rows: ClassMatrixRow[];
+}
+
+export interface ClassAttendanceMatrix {
+  year: number;
+  schoolWide: ClassMatrixBlock;
+  /** 当年有未软删 class_sessions 的班级，按班名升序 */
+  classes: ClassMatrixBlock[];
 }

@@ -38,6 +38,13 @@ import type {
   ListQuery,
   ListResult,
   QuickCheckInInput,
+  ReportAlerts,
+  ReportAttendanceStats,
+  ReportCourseStats,
+  ReportInventoryStats,
+  ReportOverview,
+  ReportRange,
+  ReportStudentStats,
   RosterCandidate,
   RosterCandidateQuery,
   RosterMember,
@@ -197,6 +204,19 @@ declare global {
       sessionCreate(input: ClassSessionInput): Promise<IpcResult<SessionMutationResult>>;
       sessionUpdate(input: SessionUpdateInput): Promise<IpcResult<SessionMutationResult>>;
       sessionDelete(id: number): Promise<IpcResult<{ id: number }>>;
+    };
+
+    /** 数据报表：纯只读聚合。各接口随指标区 issue 接入。 */
+    reports: {
+      overview(range: ReportRange): Promise<IpcResult<ReportOverview>>;
+      alerts(): Promise<IpcResult<ReportAlerts>>;
+      attendanceStats(range: ReportRange): Promise<IpcResult<ReportAttendanceStats>>;
+      courseStats(range: ReportRange): Promise<IpcResult<ReportCourseStats>>;
+      studentStats(range: ReportRange): Promise<IpcResult<ReportStudentStats>>;
+      inventoryStats(range: ReportRange): Promise<IpcResult<ReportInventoryStats>>;
+      exportAttendanceByClass(
+        year: number,
+      ): Promise<IpcResult<{ sheetCount: number; classCount: number }>>;
     };
   }
 
