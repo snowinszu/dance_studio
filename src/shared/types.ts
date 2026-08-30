@@ -274,7 +274,16 @@ export type IpcErrorCode =
   /** 领取数量大于当前库存 */
   | 'INSUFFICIENT_STOCK'
   /** 物件名与未软删物件重名 */
-  | 'ITEM_NAME_CONFLICT';
+  | 'ITEM_NAME_CONFLICT'
+  // —— 考勤管理 ——
+  /** 净消耗使剩余课时 < 0 且未强制 */
+  | 'INSUFFICIENT_LESSONS'
+  /** 考勤记录不存在或已撤销 */
+  | 'ATTENDANCE_NOT_FOUND'
+  /** 同学员 + 日期 + 课程 + 类型 已有未撤销记录，且未允许重复 */
+  | 'DUPLICATE_ATTENDANCE'
+  /** 手动调整课时的增减数为 0 或非整数 */
+  | 'INVALID_ADJUSTMENT';
 
 // ===========================================================================
 // 库存管理模块
@@ -400,6 +409,213 @@ export interface InventoryImportReport {
   updated: number;
   /** 校验失败被跳过的行数 */
   failed: number;
+  /** row = xlsx 行号（含表头，从 2 起） */
+  failures: { row: number; reason: string }[];
+}
+
+// ===========================================================================
+// 考勤管理模块
+// ===========================================================================
+
+/**
+ * 一条考勤流水的类型。前五个是「考勤事件」，`调整` 是「手动增减课时」。
+ * 只有 `出勤` 默认消耗课时（-1，私教可 -2）；请假 / 缺勤 / 补课 / 试听 落库 lessons_delta = 0。
+ */
+export type AttendanceType = '出勤' | '请假' | '缺勤' | '补课' | '试听' | '调整';
+
+/** 除「调整」外的考勤事件类型——快速打卡 / 批量点名 / 更正只接受这五个。 */
+export type AttendanceEventType = Exclude<AttendanceType, '调整'>;
+
+/**
+ * 一条考勤流水。studentName / studentPhone 由 JOIN students 得到（学员软删后照常带出）。
+ * lessons_delta 是落库真值：消耗为负、增加为正、不影响为 0。
+ */
+export interface AttendanceRecord {
+  id: number;
+  studentId: number;
+  studentName: string;
+  studentPhone: string;
+  /** 预留关联「课程安排」，本期恒 null */
+  sessionId: number | null;
+  className: string | null;
+  teacher: string | null;
+  /** 'YYYY-MM-DD' */
+  attendDate: string;
+  /** 'HH:MM'，可空 */
+  attendTime: string | null;
+  type: AttendanceType;
+  lessonsDelta: number;
+  reason: string | null;
+  operator: string | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** 非 null 即已撤销 */
+  deletedAt: string | null;
+}
+
+/** 单条快速打卡入参。 */
+export interface QuickCheckInInput {
+  studentId: number;
+  type: AttendanceEventType;
+  /** 省略 → 今天（YYYY-MM-DD） */
+  attendDate?: string;
+  attendTime?: string | null;
+  className?: string | null;
+  teacher?: string | null;
+  /** 仅 type='出勤' 有意义：正整数，省略 → 1；其它类型忽略，落库 delta = 0 */
+  lessons?: number;
+  operator?: string | null;
+  note?: string | null;
+  /** 余额不足时放行、允许 remaining_lessons 记负 */
+  force?: boolean;
+  /** 重复打卡（同学员+日期+课程+类型未撤销）时放行 */
+  allowDuplicate?: boolean;
+}
+
+/** 写入 / 更正 / 调整成功后的统一返回：新（或被改）记录 id + 该学员写入后的剩余课时。 */
+export interface CheckInResult {
+  id: number;
+  /** force 时可能为负 */
+  remainingLessons: number;
+}
+
+/** 批量点名里的一名学员。 */
+export interface BatchCheckInEntry {
+  studentId: number;
+  type: AttendanceEventType;
+  /** 仅 type='出勤'：正整数，省略 → 1 */
+  lessons?: number;
+  note?: string | null;
+}
+
+/** 批量点名入参：一节课的公共信息 + 若干学员的状态。 */
+export interface BatchCheckInInput {
+  attendDate?: string;
+  attendTime?: string | null;
+  className?: string | null;
+  teacher?: string | null;
+  operator?: string | null;
+  force?: boolean;
+  allowDuplicate?: boolean;
+  entries: BatchCheckInEntry[];
+}
+
+/** 批量点名里单个学员的写入结果。 */
+export interface BatchCheckInRowResult {
+  studentId: number;
+  ok: boolean;
+  /** ok=true 时给 */
+  recordId?: number;
+  /** ok=true 时给 */
+  remainingLessons?: number;
+  /** ok=false 时给 */
+  errorCode?: IpcErrorCode;
+  /** ok=false 时给 */
+  reason?: string;
+}
+
+export interface BatchCheckInResult {
+  succeeded: number;
+  skipped: number;
+  rows: BatchCheckInRowResult[];
+}
+
+/** 更正一条考勤记录的入参。不能改 studentId（换人 = 撤销后重打）。 */
+export interface AttendanceCorrectionInput {
+  id: number;
+  type: AttendanceEventType;
+  attendDate: string;
+  attendTime?: string | null;
+  className?: string | null;
+  teacher?: string | null;
+  /** 仅 type='出勤' */
+  lessons?: number;
+  operator?: string | null;
+  note?: string | null;
+  /** 新旧 delta 差额使余额变负时放行 */
+  force?: boolean;
+}
+
+/** 手动增减某学员课时的入参。 */
+export interface LessonAdjustmentInput {
+  studentId: number;
+  /** 带符号非零整数：正 = 加、负 = 减 */
+  delta: number;
+  /** 必填 */
+  reason: string;
+  /** 省略 → 今天 */
+  attendDate?: string;
+  operator?: string | null;
+  note?: string | null;
+  /** delta<0 且会使余额变负时放行 */
+  force?: boolean;
+}
+
+/** 考勤流水列表查询。attend_date 是 YYYY-MM-DD 字符串，直接字符串比较即时间序。 */
+export interface AttendanceListQuery {
+  /** attend_date >= dateFrom */
+  dateFrom?: string;
+  /** attend_date <= dateTo */
+  dateTo?: string;
+  /** 匹配学员姓名或手机号子串 */
+  keyword?: string;
+  type?: AttendanceType;
+  /** 默认 100 */
+  limit?: number;
+  /** 默认 0 */
+  offset?: number;
+}
+
+export interface AttendanceListResult {
+  rows: AttendanceRecord[];
+  total: number;
+}
+
+/** 批量点名花名册候选查询。 */
+export interface RosterCandidateQuery {
+  /** 对 students.dance_types(JSON 数组字符串) 做包含匹配 */
+  danceType?: string;
+  /** 姓名或手机号子串 */
+  keyword?: string;
+}
+
+/** 花名册候选里的一名学员。 */
+export interface RosterCandidate {
+  id: number;
+  name: string;
+  phone: string;
+  remainingLessons: number | null;
+  cardExpireDate: string | null;
+  status: string;
+}
+
+/** 按月汇总的一行：某学员某月。仅导出用（无独立 IPC）。 */
+export interface MonthlySummaryRow {
+  studentId: number;
+  studentName: string;
+  studentPhone: string;
+  /** 'YYYY-MM' */
+  month: string;
+  attendCount: number;
+  leaveCount: number;
+  absentCount: number;
+  makeupCount: number;
+  trialCount: number;
+  /** 当月 lessons_delta < 0 的绝对值之和 */
+  lessonsConsumed: number;
+  /** 当前实时剩余课时 */
+  remainingLessons: number | null;
+}
+
+/** 考勤导入结果报告。 */
+export interface AttendanceImportReport {
+  succeeded: number;
+  /** 疑似重复被跳过的行数 */
+  skipped: number;
+  failed: number;
+  /** 成功但导致该学员余额为负的行数（提示用） */
+  negativeBalance: number;
   /** row = xlsx 行号（含表头，从 2 起） */
   failures: { row: number; reason: string }[];
 }
