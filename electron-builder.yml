@@ -27,6 +27,8 @@ files:
   - reports.html
   - reports.js
   - reports.charts.js
+  - settings.html
+  - settings.js
   - colors_and_type.css
   - package.json
 

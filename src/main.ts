@@ -7,13 +7,49 @@
  */
 import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'node:path';
-import { getDb } from './db/connection';
+import { getDb, resolveDbPath } from './db/connection';
 import { run as runMigrations, LATEST_VERSION } from './db/migrations';
+import { createMilestoneSnapshot, ensureDailySnapshot } from './db/backup';
+import {
+  applyPendingRestore,
+  clearPendingRestore,
+  readPendingRestore,
+} from './db/restore';
+import { backupDir, userDataDir } from './paths';
 import { registerIpc } from './ipc/register';
+
+/** 每日快照保留份数（迁移前里程碑不受此限，一律留存）。 */
+const KEEP_DAILY_SNAPSHOTS = 20;
 
 // 单窗口引用挂在模块作用域：若只用局部变量，窗口对象可能被垃圾回收，
 // 导致窗口在运行中突然白屏或关闭。
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * 若上次退出前留下了「恢复」标记，就在这里换库。
+ * 必须在 getDb() 之前调用——数据库连接一旦打开，文件就不能安全替换了。
+ * 成败都清掉标记，避免下次启动又试一遍；失败时提示用户并用原数据继续启动。
+ */
+function maybeApplyPendingRestore(): void {
+  const dir = userDataDir();
+  const pending = readPendingRestore(dir);
+  if (!pending) return;
+  try {
+    const res = applyPendingRestore(resolveDbPath(), pending.source);
+    console.log(
+      `[restore] 已用备份恢复：${pending.source}（原库留底：${res.preservedTo ?? '（原本无库）'}）`,
+    );
+  } catch (err) {
+    console.error('[restore] 恢复失败，将用原数据启动：', err);
+    dialog.showErrorBox(
+      '恢复失败',
+      '用备份恢复数据没有成功，应用会用原来的数据启动。\n\n' +
+        (err instanceof Error ? err.message : String(err)),
+    );
+  } finally {
+    clearPendingRestore(dir);
+  }
+}
 
 /**
  * 打开数据库并把结构迁移到最新版。
@@ -24,11 +60,44 @@ let mainWindow: BrowserWindow | null = null;
 function initDatabase(): void {
   try {
     const db = getDb();
+
+    // —— 迁移前里程碑 ——
+    // 结构要升级时，先留一份「升级前」的干净还原点再动结构。改表结构是唯一
+    // 可能回不去的操作，出事就靠这份还原。同步生成 + 等它返回，才是真正的「迁移前」。
+    // 失败只提示、不挡迁移和启动（宁可少一份备份，也不能因为备份没做成就打不开应用）。
+    // currentVersion === 0 时是全新安装，没有「升级前」可言，跳过。
+    const currentVersion = db.pragma('user_version', { simple: true }) as number;
+    if (currentVersion > 0 && currentVersion < LATEST_VERSION) {
+      try {
+        const meta = createMilestoneSnapshot({
+          dir: backupDir(),
+          version: LATEST_VERSION,
+        });
+        console.log(`[backup] 迁移前里程碑已生成：${meta.name}`);
+      } catch (err) {
+        console.error('[backup] 迁移前里程碑生成失败（继续迁移）：', err);
+        dialog.showErrorBox(
+          '备份提示',
+          '迁移前的自动备份没做成，应用会照常升级并启动。\n\n' +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    }
+
     runMigrations(db);
     // 供打包冒烟脚本（scripts/smoke-packaged.mjs）经 app.evaluate 读取，
     // 确认原生模块在打包产物里能正常加载、迁移能跑通
     process.env.STUDIO_DB_STATUS = 'ready';
     console.log(`[db] 就绪，结构版本 v${LATEST_VERSION}`);
+
+    // —— 每日快照 ——
+    // 距上一份 daily 快照超 24h 才补一份，随后按份数轮换。不 await：让它在后台跑，
+    // 不挡窗口创建；任何异常自己吞掉只记日志（备份失败不该影响正常使用）。
+    void ensureDailySnapshot({ dir: backupDir(), keep: KEEP_DAILY_SNAPSHOTS })
+      .then((meta) => {
+        if (meta) console.log(`[backup] 每日快照已生成：${meta.name}`);
+      })
+      .catch((err) => console.error('[backup] 每日快照失败（不影响使用）：', err));
   } catch (err) {
     process.env.STUDIO_DB_STATUS = 'error';
     const detail = err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err);
@@ -68,6 +137,8 @@ function createMainWindow(): void {
 // app ready 后再建窗口：这是 Electron 能安全创建 BrowserWindow 的最早时机
 app.whenReady().then(
   () => {
+    // 换库要赶在 getDb() 之前——放在最前面
+    maybeApplyPendingRestore();
     // 建窗口前先把数据库准备好、把 IPC 服务台支起来，让首个渲染页面一加载就能读写数据
     initDatabase();
     registerIpc();

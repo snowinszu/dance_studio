@@ -5,7 +5,9 @@
  * 递单子，服务台叫后台（domain 层）办，办好把结果装进统一信封递回去。
  * 后台如果撂挑子（抛异常），服务台也不让异常飞出去，而是回一个「办不成 + 原因」的信封。
  */
-import { dialog, ipcMain } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type {
   AllocationInput,
   AllocationListQuery,
@@ -58,6 +60,10 @@ import { exportAttendanceByClass } from '../io/reports-xlsx';
 import { pickOpenPath, pickSavePath, ymdCompact } from '../io/xlsx-util';
 import { CH } from './channels';
 import { AppError, ok, toIpcError } from './errors';
+import { backupDir, userDataDir } from '../paths';
+import { createSnapshot, listSnapshots } from '../db/backup';
+import { closeDb } from '../db/connection';
+import { markPendingRestore, validateRestoreSource } from '../db/restore';
 import * as studentsRepo from '../domain/students.repo';
 import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
@@ -631,6 +637,115 @@ export function registerIpc(): void {
   );
 
   handle(CH.reportsHomeSummary, () => reportsRepo.getHomeSummary());
+
+  // —— 数据库快照备份 ——
+  // 完整性校验失败（BACKUP_VERIFY_FAILED）原样透出；其余（磁盘满 / 无写权限……）
+  // 归到 IO_WRITE_FAILED，带上原始 message 方便用户判断。
+  const makeSnapshot = async () => {
+    try {
+      return await createSnapshot({ dir: backupDir() });
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `备份写入失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  handle(CH.backupCreate, () => makeSnapshot());
+
+  handle(CH.backupList, () => listSnapshots(backupDir()));
+
+  handle(CH.backupReveal, () => {
+    const dir = backupDir();
+    fs.mkdirSync(dir, { recursive: true }); // 首次、或被手动删空时，先建出来再打开
+    void shell.openPath(dir);
+    return { dir };
+  });
+
+  handle(CH.backupCreateToFolder, async () => {
+    const picked = await dialog.showOpenDialog({
+      title: '选择另存目录（U 盘 / 网盘等）',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    const targetDir = picked.filePaths[0];
+    if (picked.canceled || !targetDir) {
+      throw new AppError('IO_CANCELLED', '已取消');
+    }
+    // 先在默认备份目录正常生成一份（也进列表），再往用户选的目录拷一份。
+    // 跨盘时 rename 会失败，所以这里用 copyFile。
+    const primary = await makeSnapshot();
+    const copiedTo = path.join(targetDir, primary.name);
+    try {
+      fs.copyFileSync(primary.path, copiedTo);
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `已在本机备份成功，但复制到所选目录失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { primary, copiedTo };
+  });
+
+  /**
+   * 恢复的共同收尾：校验源文件 → 原生二次确认 → 给现役数据留一份 pre-restore 快照 →
+   * 关闭连接（把 WAL 落盘，留底才完整）→ 写标记 → 重启。重启后 main.ts 在 getDb() 前换库。
+   */
+  const startRestore = async (source: string): Promise<{ restarting: true }> => {
+    validateRestoreSource(source); // 不合法直接抛 AppError
+
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['取消', '恢复并重启'],
+      defaultId: 1,
+      cancelId: 0,
+      title: '用备份恢复数据',
+      message: '将用这份备份替换当前所有数据',
+      detail:
+        `备份文件：\n${source}\n\n` +
+        '继续的话，当前数据会先自动备份一份（进备份列表，标签 pre-restore），' +
+        '然后应用重启完成恢复。',
+    });
+    if (response !== 1) throw new AppError('IO_CANCELLED', '已取消');
+
+    // 先给现役数据留底；这一步失败就中止恢复——不能让用户在没有后悔药的情况下换库
+    try {
+      await createSnapshot({ dir: backupDir(), tag: 'pre-restore' });
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `恢复前的自动备份没做成，已中止恢复：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    closeDb(); // WAL 落盘，让留底的旧库文件是完整的
+    markPendingRestore(userDataDir(), source);
+    app.relaunch();
+    app.exit(0);
+    return { restarting: true };
+  };
+
+  handle(CH.backupRestoreFromList, (args?: { name?: string }) => {
+    const name = typeof args?.name === 'string' ? args.name : '';
+    // 只接受备份目录下的文件名，挡掉路径穿越
+    if (!name || path.basename(name) !== name) {
+      throw new AppError('BAD_REQUEST', '缺少合法的备份文件名');
+    }
+    return startRestore(path.join(backupDir(), name));
+  });
+
+  handle(CH.backupRestoreFromFile, async () => {
+    const picked = await dialog.showOpenDialog({
+      title: '选择要恢复的数据库备份',
+      properties: ['openFile'],
+      filters: [{ name: '数据库备份', extensions: ['db'] }],
+    });
+    const file = picked.filePaths[0];
+    if (picked.canceled || !file) throw new AppError('IO_CANCELLED', '已取消');
+    return startRestore(file);
+  });
 
   handle(CH.reportsExportAttendanceByClass, async (args?: { year?: number }) => {
     const year = Number(args?.year);

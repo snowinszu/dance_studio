@@ -303,7 +303,10 @@ export type IpcErrorCode =
   | 'INVALID_WEEKDAY'
   // —— 数据报表 ——
   /** 所选年份没有排课班级，也没有学员考勤记录，无可导出数据 */
-  | 'REPORT_EMPTY';
+  | 'REPORT_EMPTY'
+  // —— 数据库快照备份 ——
+  /** 快照生成后 PRAGMA quick_check 未通过：文件已被丢弃，未产出正式快照 */
+  | 'BACKUP_VERIFY_FAILED';
 
 // ===========================================================================
 // 库存管理模块
@@ -1077,6 +1080,34 @@ export interface ClassAttendanceMatrix {
   schoolWide: ClassMatrixBlock;
   /** 当年有未软删 class_sessions 的班级，按班名升序 */
   classes: ClassMatrixBlock[];
+}
+
+/* ───────────────────────── 数据库快照备份 ───────────────────────── */
+
+/**
+ * 一份数据库快照的元信息。
+ *
+ * `userVersion` 只有「刚生成」时（createSnapshot / createMilestoneSnapshot）才有值——
+ * 那时会打开快照读一次 PRAGMA user_version；`listSnapshots` 只读文件系统元信息、
+ * 不逐个打开快照，所以列出来的项没有这个字段。
+ */
+export interface SnapshotMeta {
+  /** 文件名，如 `dance-studio-20260830-190705.db` */
+  name: string;
+  /** 快照文件的绝对路径 */
+  path: string;
+  /** 文件字节数 */
+  bytes: number;
+  /** 创建时间（文件 mtime）的 ISO 8601 字符串 */
+  createdAt: string;
+  /**
+   * `daily` = 每日/手动快照（会被轮换裁掉旧的）；
+   * `milestone` = 迁移前里程碑（文件名含 `-premigrate-v`，永久保留）；
+   * `pre-restore` = 一次恢复操作前自动留的底（文件名含 `-pre-restore`，永久保留）。
+   */
+  kind: 'daily' | 'milestone' | 'pre-restore';
+  /** 落地时记录的结构版本号（PRAGMA user_version）；listSnapshots 结果里没有 */
+  userVersion?: number;
 }
 
 /** 首页顶部「今日概况」四张卡的数字。「今天」按本地时间。 */
