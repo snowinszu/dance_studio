@@ -16,6 +16,7 @@ import type {
   ClassAttendanceMatrix,
   ClassMatrixBlock,
   ClassMatrixRow,
+  HomeSummary,
   ReportAlerts,
   ReportAttendanceStats,
   ReportCourseStats,
@@ -814,4 +815,79 @@ export function getClassAttendanceMatrix(arg: { year: number }): ClassAttendance
   });
 
   return { year, schoolWide, classes };
+}
+
+/* ───────────────────────── 首页概况 ───────────────────────── */
+
+/**
+ * 管理平台首页顶部「今日概况」四张卡要的数字，一次聚合，全部只读。
+ * 「今天」用本地时间算（不在 SQL 用 date('now')）。
+ */
+export function getHomeSummary(): HomeSummary {
+  const db = getDb();
+  const today = todayLocal();
+  const cutoff30 = daysAgoLocal(30);
+
+  const scalar = (sql: string, params: Record<string, string> = {}): number =>
+    (db.prepare(sql).get(params) as { n: number }).n;
+
+  const activeStudents = scalar(
+    `SELECT COUNT(*) AS n FROM students WHERE deleted_at IS NULL AND status = '在读'`,
+  );
+
+  const newStudentsLast30d = scalar(
+    `SELECT COUNT(*) AS n FROM students
+      WHERE deleted_at IS NULL AND enroll_date IS NOT NULL AND enroll_date >= @cutoff30`,
+    { cutoff30 },
+  );
+
+  const todayCheckIns = scalar(
+    `SELECT COUNT(*) AS n FROM attendance_records
+      WHERE deleted_at IS NULL AND type IN ('出勤','补课') AND attend_date = @today`,
+    { today },
+  );
+
+  const att = db
+    .prepare(
+      `SELECT COALESCE(SUM(type = '出勤'), 0) AS present,
+              COALESCE(SUM(type IN ('出勤','缺勤','请假')), 0) AS scheduled
+         FROM attendance_records
+        WHERE deleted_at IS NULL AND attend_date = @today`,
+    )
+    .get({ today }) as { present: number; scheduled: number };
+  const todayAttendanceRate = att.scheduled > 0 ? att.present / att.scheduled : null;
+
+  const todaySessions = scalar(
+    `SELECT COUNT(*) AS n FROM class_sessions
+      WHERE deleted_at IS NULL AND status = '正常' AND session_date = @today`,
+    { today },
+  );
+
+  const todayRoomsInUse = scalar(
+    `SELECT COUNT(DISTINCT room) AS n FROM class_sessions
+      WHERE deleted_at IS NULL AND status = '正常' AND session_date = @today
+        AND room IS NOT NULL AND TRIM(room) <> ''`,
+    { today },
+  );
+
+  const inv = db
+    .prepare(
+      `SELECT COUNT(*) AS itemKinds,
+              COALESCE(SUM(quantity), 0) AS totalQuantity,
+              COALESCE(SUM(quantity <= low_stock_threshold), 0) AS lowStockCount
+         FROM inventory_items WHERE deleted_at IS NULL`,
+    )
+    .get() as { itemKinds: number; totalQuantity: number; lowStockCount: number };
+
+  return {
+    activeStudents,
+    newStudentsLast30d,
+    todayCheckIns,
+    todayAttendanceRate,
+    todaySessions,
+    todayRoomsInUse,
+    lowStockCount: inv.lowStockCount,
+    itemKinds: inv.itemKinds,
+    totalQuantity: inv.totalQuantity,
+  };
 }

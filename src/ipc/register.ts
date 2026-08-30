@@ -630,6 +630,8 @@ export function registerIpc(): void {
     reportsRepo.getInventoryStats(checkedRange(q)),
   );
 
+  handle(CH.reportsHomeSummary, () => reportsRepo.getHomeSummary());
+
   handle(CH.reportsExportAttendanceByClass, async (args?: { year?: number }) => {
     const year = Number(args?.year);
     if (!Number.isInteger(year) || year < 2000 || year > 2100) {

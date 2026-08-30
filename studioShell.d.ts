@@ -27,6 +27,7 @@ import type {
   CustomFieldInput,
   CustomFieldPatch,
   GenerateMonthResult,
+  HomeSummary,
   ImportReport,
   InventoryImportReport,
   InventoryItem,
@@ -217,6 +218,7 @@ declare global {
       exportAttendanceByClass(
         year: number,
       ): Promise<IpcResult<{ sheetCount: number; classCount: number }>>;
+      homeSummary(): Promise<IpcResult<HomeSummary>>;
     };
   }
 

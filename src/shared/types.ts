@@ -1078,3 +1078,25 @@ export interface ClassAttendanceMatrix {
   /** 当年有未软删 class_sessions 的班级，按班名升序 */
   classes: ClassMatrixBlock[];
 }
+
+/** 首页顶部「今日概况」四张卡的数字。「今天」按本地时间。 */
+export interface HomeSummary {
+  /** 在读且未软删的学员数 */
+  activeStudents: number;
+  /** 近 30 天新登记学员（enroll_date >= 今天-30，含当天） */
+  newStudentsLast30d: number;
+  /** 今天的出勤人次（出勤 + 补课，未撤销） */
+  todayCheckIns: number;
+  /** 今天 出勤 /(出勤 + 缺勤 + 请假)；分母为 0 时为 null */
+  todayAttendanceRate: number | null;
+  /** 今天 status='正常' 未软删课节数 */
+  todaySessions: number;
+  /** 今天正常课节里 room 非空且去重的取值个数 */
+  todayRoomsInUse: number;
+  /** 未软删物件中库存 <= 阈值的数量 */
+  lowStockCount: number;
+  /** 未软删物件品类数 */
+  itemKinds: number;
+  /** 未软删物件的在库件数合计 */
+  totalQuantity: number;
+}
