@@ -34,8 +34,9 @@ function initDatabase(): void {
     // 结构要升级时，先留一份「升级前」的干净还原点再动结构。改表结构是唯一
     // 可能回不去的操作，出事就靠这份还原。同步生成 + 等它返回，才是真正的「迁移前」。
     // 失败只提示、不挡迁移和启动（宁可少一份备份，也不能因为备份没做成就打不开应用）。
+    // currentVersion === 0 时是全新安装，没有「升级前」可言，跳过。
     const currentVersion = db.pragma('user_version', { simple: true }) as number;
-    if (currentVersion < LATEST_VERSION) {
+    if (currentVersion > 0 && currentVersion < LATEST_VERSION) {
       try {
         const meta = createMilestoneSnapshot({
           dir: backupDir(),
