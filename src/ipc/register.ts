@@ -24,6 +24,7 @@ import type {
   LessonAdjustmentInput,
   ListQuery,
   QuickCheckInInput,
+  ReportRange,
   RosterAddInput,
   RosterCandidateQuery,
   RosterRemoveInput,
@@ -62,6 +63,7 @@ import * as tagsRepo from '../domain/tags.repo';
 import * as inventoryRepo from '../domain/inventory.repo';
 import * as attendanceRepo from '../domain/attendance.repo';
 import * as courseRepo from '../domain/course.repo';
+import * as reportsRepo from '../domain/reports.repo';
 import {
   validateClass,
   validateMonthQuery,
@@ -93,6 +95,23 @@ function handle<A extends unknown[], R>(
 /** 当前完整表单描述（预设 + 未归档自定义）。 */
 function currentSchema() {
   return buildSchema(fieldDefsRepo.descriptors());
+}
+
+/**
+ * 校验并规整报表时间范围。页面理应已把 preset 换算成合法日期串，这里是最后一道闸：
+ * 格式不对或起 > 止 → BAD_REQUEST，绝不把脏范围喂给 SQL。
+ */
+function checkedRange(q?: { from?: string; to?: string }): ReportRange {
+  const from = (typeof q?.from === 'string' ? q.from : '').trim();
+  const to = (typeof q?.to === 'string' ? q.to : '').trim();
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (!ymd.test(from) || !ymd.test(to)) {
+    throw new AppError('BAD_REQUEST', '缺少合法的起止日期');
+  }
+  if (from > to) {
+    throw new AppError('BAD_REQUEST', '起始日期不能晚于结束日期');
+  }
+  return { from, to };
 }
 
 /** 在 app ready 后、创建窗口前调用一次。 */
@@ -586,4 +605,9 @@ export function registerIpc(): void {
     if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少课节 id');
     return courseRepo.sessionSoftDelete(Number(id));
   });
+
+  // —— 数据报表（纯只读聚合）——
+  handle(CH.reportsOverview, (q?: { from?: string; to?: string }) =>
+    reportsRepo.getOverview(checkedRange(q)),
+  );
 }

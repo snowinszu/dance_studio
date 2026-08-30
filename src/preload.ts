@@ -82,6 +82,7 @@ const CH = {
   courseSessionCreate: 'course:sessionCreate',
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',
+  reportsOverview: 'reports:overview',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -183,8 +184,10 @@ const api = {
     sessionDelete: (id: number) => invoke(CH.courseSessionDelete, id),
   },
 
-  // 数据报表：纯只读聚合。频道随各指标区 issue 逐个接入，本期先占位命名空间。
-  reports: {},
+  // 数据报表：纯只读聚合。频道随各指标区 issue 逐个接入。
+  reports: {
+    overview: (range: { from: string; to: string }) => invoke(CH.reportsOverview, range),
+  },
 };
 
 contextBridge.exposeInMainWorld('studioShell', api);

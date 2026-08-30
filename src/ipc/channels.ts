@@ -90,6 +90,9 @@ export const CH = {
   courseSessionCreate: 'course:sessionCreate',
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',
+
+  // 数据报表（纯只读聚合）
+  reportsOverview: 'reports:overview',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

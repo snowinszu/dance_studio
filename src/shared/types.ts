@@ -911,3 +911,32 @@ export interface GenerateMonthResult {
   /** 本次新物化的实例数 */
   created: number;
 }
+
+/* ───────────────────────── 数据报表（纯只读聚合）───────────────────────── */
+
+/**
+ * 报表统计区间。两端闭区间，'YYYY-MM-DD'。
+ * 页面把「本月 / 本年 / 自定义」换算成显式日期串后传给主进程；主进程不认 preset 枚举。
+ */
+export interface ReportRange {
+  from: string;
+  to: string;
+}
+
+/** 报表页顶部的概览卡片。 */
+export interface ReportOverview {
+  /** 在读学员数（status='在读'，未软删） */
+  activeStudents: number;
+  /** 区间内出勤人次（type 出勤 / 补课，未撤销） */
+  checkInsInRange: number;
+  /** 区间内正常课节数（status='正常'，未软删） */
+  sessionsInRange: number;
+  /** 近 30 天新登记学员（enroll_date >= 今天-30，含当天） */
+  newStudentsLast30d: number;
+  /** 在读且剩余课时 <= 3 */
+  lowBalanceCount: number;
+  /** 未软删物件且库存 <= 预警阈值 */
+  lowStockCount: number;
+  /** 当年（取 to 的年份）session_id 为空的出勤 / 补课条数——进不了「按班级」导出的提示值 */
+  unlinkedCheckInsThisYear: number;
+}

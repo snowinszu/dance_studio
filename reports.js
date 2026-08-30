@@ -164,6 +164,53 @@ function renderRangeControl() {
   return el('div', { class: 'range-control' }, ...children);
 }
 
+/* ───────────────────────── 通用区块 / 卡片 ───────────────────────── */
+
+/** 一个可折叠的报表分区：<details class="report-section">。 */
+function section(title, open, ...children) {
+  return el(
+    'details',
+    { class: 'report-section', open: open ? '' : null },
+    el(
+      'summary',
+      {},
+      el('span', {}, title),
+      el(
+        'svg',
+        { class: 'sec-chevron', viewBox: '0 0 24 24', width: '16', height: '16', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+        el('polyline', { points: '9 18 15 12 9 6' }),
+      ),
+    ),
+    el('div', { class: 'section-body' }, ...children),
+  );
+}
+
+/** 一张 KPI 卡片。warn=true 时数值转成预警色（--cc-1）。 */
+function kpiCard(label, value, warn) {
+  return el(
+    'div',
+    { class: 'kpi-card' + (warn ? ' is-warn' : '') },
+    el('div', { class: 'kpi-label' }, label),
+    el('div', { class: 'kpi-value' }, String(value)),
+  );
+}
+
+/* ───────────────────────── 概览 KPI 区 ───────────────────────── */
+
+function renderOverview(ov) {
+  const grid = el(
+    'div',
+    { class: 'kpi-grid' },
+    kpiCard('在读学员', ov.activeStudents),
+    kpiCard('本区间出勤人次', ov.checkInsInRange),
+    kpiCard('本区间课节数', ov.sessionsInRange),
+    kpiCard('近 30 天新增学员', ov.newStudentsLast30d),
+    kpiCard('课时余额预警', ov.lowBalanceCount, ov.lowBalanceCount > 0),
+    kpiCard('低库存预警', ov.lowStockCount, ov.lowStockCount > 0),
+  );
+  return section('概览', true, grid);
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -194,7 +241,10 @@ function render() {
 
 /**
  * 按当前时间范围拉取并渲染各数据区。
- * 本 issue 尚无数据接口，先放占位；概览 / 预警 / 各指标区在后续 issue 接入。
+ * 预警中心、考勤 / 课程 / 学员 / 库存四个指标区在后续 issue 往下追加。
+ *
+ * body 是本次 render() 新建的容器节点：范围快速切换时，旧请求回来只会写到已脱离
+ * 文档的旧 body 上，不会盖掉新结果——闭包捕获天然隔离了竞态。
  */
 async function load(body) {
   if (customRangeInvalid()) {
@@ -204,14 +254,17 @@ async function load(body) {
     return;
   }
 
-  body.replaceChildren(
-    el(
-      'div',
-      { class: 'empty' },
-      el('strong', {}, '数据区即将接入'),
-      '预警中心、概览 KPI，以及考勤 / 课程 / 学员 / 库存四个指标区会陆续出现在这里。',
-    ),
-  );
+  body.replaceChildren(el('div', { class: 'sec-empty' }, '加载中…'));
+
+  const range = currentRange();
+  try {
+    const overview = unwrap(await shell.reports.overview(range));
+    body.replaceChildren(renderOverview(overview));
+  } catch (e) {
+    body.replaceChildren(
+      el('div', { class: 'empty' }, el('strong', {}, '数据读取失败'), e.message || '请稍后重试'),
+    );
+  }
 }
 
 /* ───────────────────────── 路由 ───────────────────────── */
