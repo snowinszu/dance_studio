@@ -43,6 +43,19 @@ let page: Page;
 let pageErrors: string[];
 let workDir: string;
 let backupsDir: string;
+let launchArgs: string[];
+let launchEnv: Record<string, string>;
+
+/** 起一个应用实例并挂好 page / pageErrors。用同一份 args/env，供恢复用例重启后再起。 */
+async function launchApp(): Promise<void> {
+  app = await electron.launch({ args: launchArgs, env: launchEnv });
+  page = await app.firstWindow();
+  page.on('pageerror', (err) => pageErrors.push(String(err)));
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') pageErrors.push(msg.text());
+  });
+  await page.waitForLoadState('domcontentloaded');
+}
 
 test.beforeEach(async () => {
   pageErrors = [];
@@ -50,22 +63,14 @@ test.beforeEach(async () => {
   const userDataDir = path.join(workDir, 'udata');
   backupsDir = path.join(userDataDir, 'backups');
 
-  const env: Record<string, string> = {};
+  launchEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && key !== 'ELECTRON_RUN_AS_NODE') env[key] = value;
+    if (value !== undefined && key !== 'ELECTRON_RUN_AS_NODE') launchEnv[key] = value;
   }
-  env.STUDIO_DB_PATH = path.join(workDir, 'test.db');
+  launchEnv.STUDIO_DB_PATH = path.join(workDir, 'test.db');
+  launchArgs = ['.', `--user-data-dir=${userDataDir}`, '--no-sandbox'];
 
-  app = await electron.launch({
-    args: ['.', `--user-data-dir=${userDataDir}`, '--no-sandbox'],
-    env,
-  });
-  page = await app.firstWindow();
-  page.on('pageerror', (err) => pageErrors.push(String(err)));
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') pageErrors.push(msg.text());
-  });
-  await page.waitForLoadState('domcontentloaded');
+  await launchApp();
 });
 
 test.afterEach(async () => {
@@ -162,4 +167,59 @@ test('边界：备份目录不可写 → 立即备份报错，页面不崩、按
   await expect(page.locator('#btn-backup-now')).toHaveText('立即备份');
 
   expect(pageErrors, '备份失败不应产生未捕获的页面错误').toEqual([]);
+});
+
+test('恢复：从备份列表恢复 → 应用自动重启 → 数据回到那份备份的状态', async () => {
+  const addStudent = (phone: string): Promise<unknown> =>
+    page.evaluate(
+      (p) =>
+        window.studioShell.students.create({ name: `恢复测试${p.slice(-3)}`, phonePrimary: p }),
+      phone,
+    );
+  const studentTotal = (): Promise<number> =>
+    page.evaluate(async () => {
+      const r = await window.studioShell.students.list();
+      return r.ok ? r.data.total : -1;
+    });
+
+  // 播种 2 名学员 → 备份（快照里是 2 人）
+  await addStudent('13800138001');
+  await addStudent('13800138002');
+  expect(await studentTotal()).toBe(2);
+
+  await gotoSettings();
+  await page.waitForTimeout(1100); // 文件名到秒，错开与启动快照同秒
+  await page.locator('#btn-backup-now').click();
+  await expect(page.locator('#toast')).toContainText('已备份到');
+  const rows = page.locator('.data-table tbody tr');
+  await expect(rows.first()).toBeVisible();
+
+  // 再加 1 名 → 现在 3 人（这一步之后的改动，恢复时应被丢弃）
+  await addStudent('13800138003');
+  expect(await studentTotal()).toBe(3);
+
+  // stub 原生二次确认框（点「恢复并重启」）+ relaunch（免得真的 spawn 新进程）
+  await app.evaluate(({ dialog, app: elApp }) => {
+    // @ts-expect-error 测试替身，签名简化
+    dialog.showMessageBox = async () => ({ response: 1 });
+    elApp.relaunch = () => undefined;
+  });
+
+  // 点最新一行（刚才的手动备份）的「恢复」→ startRestore 会 app.exit(0)
+  await rows.first().locator('.row-btn').click();
+  await app.waitForEvent('close').catch(() => undefined);
+  await app.close().catch(() => undefined);
+
+  // 重新起一个（同 userData / env）→ 启动最早期 maybeApplyPendingRestore 换库
+  await launchApp();
+
+  // 数据回到备份那一刻的 2 人
+  await expect.poll(() => studentTotal(), { timeout: 10_000 }).toBe(2);
+
+  // 备份目录 / 列表里出现一份「恢复前」留底快照
+  expect(snapshotFiles().some((f) => f.includes('-pre-restore'))).toBe(true);
+  await gotoSettings();
+  await expect(page.locator('.badge-prerestore').first()).toHaveText('恢复前');
+
+  expect(pageErrors, '恢复往返不应有未捕获页面错误').toEqual([]);
 });

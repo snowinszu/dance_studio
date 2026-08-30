@@ -1100,8 +1100,12 @@ export interface SnapshotMeta {
   bytes: number;
   /** 创建时间（文件 mtime）的 ISO 8601 字符串 */
   createdAt: string;
-  /** `daily` = 每日/手动快照；`milestone` = 迁移前里程碑（文件名含 `-premigrate-v`） */
-  kind: 'daily' | 'milestone';
+  /**
+   * `daily` = 每日/手动快照（会被轮换裁掉旧的）；
+   * `milestone` = 迁移前里程碑（文件名含 `-premigrate-v`，永久保留）；
+   * `pre-restore` = 一次恢复操作前自动留的底（文件名含 `-pre-restore`，永久保留）。
+   */
+  kind: 'daily' | 'milestone' | 'pre-restore';
   /** 落地时记录的结构版本号（PRAGMA user_version）；listSnapshots 结果里没有 */
   userVersion?: number;
 }

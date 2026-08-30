@@ -106,6 +106,8 @@ export const CH = {
   backupList: 'backup:list',
   backupReveal: 'backup:reveal',
   backupCreateToFolder: 'backup:createToFolder',
+  backupRestoreFromList: 'backup:restoreFromList',
+  backupRestoreFromFile: 'backup:restoreFromFile',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

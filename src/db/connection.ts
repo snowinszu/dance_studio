@@ -16,8 +16,11 @@ import { app } from 'electron';
 
 let db: Database.Database | null = null;
 
-/** 解析数据库文件路径：环境变量优先，其次 userData，最后退回当前工作目录。 */
-function resolveDbPath(): string {
+/**
+ * 解析数据库文件路径：环境变量优先，其次 userData，最后退回当前工作目录。
+ * 导出给 main.ts 的「启动时执行恢复」用——那一步要在 getDb() 之前就知道库文件在哪。
+ */
+export function resolveDbPath(): string {
   const override = process.env.STUDIO_DB_PATH;
   if (override && override.length > 0) return override;
 

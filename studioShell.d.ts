@@ -232,6 +232,13 @@ declare global {
       reveal(): Promise<IpcResult<{ dir: string }>>;
       /** 弹目录选择框，生成一份日常快照并额外复制到所选目录；取消时返回 IO_CANCELLED。 */
       createToFolder(): Promise<IpcResult<{ primary: SnapshotMeta; copiedTo: string }>>;
+      /**
+       * 用备份列表里的某一份快照恢复：二次确认 → 自动留底 → 重启换库。
+       * 用户确认后应用会重启，此 Promise 通常不会 resolve；取消时返回 IO_CANCELLED。
+       */
+      restoreFromList(name: string): Promise<IpcResult<{ restarting: true }>>;
+      /** 选任意 .db 文件恢复，流程同 restoreFromList。 */
+      restoreFromFile(): Promise<IpcResult<{ restarting: true }>>;
     };
   }
 

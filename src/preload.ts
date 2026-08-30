@@ -94,6 +94,8 @@ const CH = {
   backupList: 'backup:list',
   backupReveal: 'backup:reveal',
   backupCreateToFolder: 'backup:createToFolder',
+  backupRestoreFromList: 'backup:restoreFromList',
+  backupRestoreFromFile: 'backup:restoreFromFile',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -216,6 +218,8 @@ const api = {
     list: () => invoke(CH.backupList),
     reveal: () => invoke(CH.backupReveal),
     createToFolder: () => invoke(CH.backupCreateToFolder),
+    restoreFromList: (name: string) => invoke(CH.backupRestoreFromList, { name }),
+    restoreFromFile: () => invoke(CH.backupRestoreFromFile),
   },
 };
 

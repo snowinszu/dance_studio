@@ -136,13 +136,14 @@ test('listSnapshots：目录不存在 → 空数组', () => {
   assert.deepEqual(listSnapshots(path.join(workDir, 'never-created')), []);
 });
 
-test('pruneSnapshots：keep=3 → 5 份日常删掉最旧 2 份，2 份里程碑一份不动', () => {
+test('pruneSnapshots：keep=3 → 5 份日常删最旧 2 份，里程碑 / 恢复前留底一份不动', () => {
   const dir = path.join(workDir, 'prune-test');
   for (let i = 1; i <= 5; i += 1) {
     fakeSnapshot(dir, `dance-studio-2026010${i}-090000.db`, 1_700_000_000 + i * 1000);
   }
   fakeSnapshot(dir, 'dance-studio-20260201-090000-premigrate-v5.db', 1_700_000_500);
   fakeSnapshot(dir, 'dance-studio-20260202-090000-premigrate-v6.db', 1_700_000_600);
+  fakeSnapshot(dir, 'dance-studio-20260203-090000-pre-restore.db', 1_700_000_700);
 
   const removed = pruneSnapshots({ dir, keep: 3 });
 
@@ -154,6 +155,7 @@ test('pruneSnapshots：keep=3 → 5 份日常删掉最旧 2 份，2 份里程碑
   const left = listSnapshots(dir);
   assert.equal(left.filter((s) => s.kind === 'daily').length, 3);
   assert.equal(left.filter((s) => s.kind === 'milestone').length, 2);
+  assert.equal(left.filter((s) => s.kind === 'pre-restore').length, 1);
 });
 
 test('hasRecentDailySnapshot：窗口内有 daily → 应跳过；只有超期 daily 或里程碑 → 应备份', () => {

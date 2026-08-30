@@ -14,6 +14,7 @@ const listRegion = document.getElementById('backup-list-region');
 const btnBackupNow = document.getElementById('btn-backup-now');
 const btnBackupTo = document.getElementById('btn-backup-to');
 const btnOpenDir = document.getElementById('btn-open-dir');
+const btnRestoreFile = document.getElementById('btn-restore-file');
 const toastEl = document.getElementById('toast');
 
 /* ───────────────────────── 小工具 ───────────────────────── */
@@ -66,6 +67,18 @@ function fmtBytes(n) {
   return `${val.toFixed(val >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+/** 快照类型 → 徽章 class / 文案。 */
+function badgeClass(kind) {
+  if (kind === 'milestone') return 'badge-milestone';
+  if (kind === 'pre-restore') return 'badge-prerestore';
+  return 'badge-daily';
+}
+function badgeLabel(kind) {
+  if (kind === 'milestone') return '迁移前';
+  if (kind === 'pre-restore') return '恢复前';
+  return '日常';
+}
+
 /** ISO 时间串 → 本地可读 `YYYY-MM-DD HH:mm`。 */
 function fmtTime(iso) {
   const d = new Date(iso);
@@ -100,10 +113,19 @@ function renderList(snapshots) {
       el(
         'td',
         {},
+        el('span', { class: 'badge ' + badgeClass(s.kind) }, badgeLabel(s.kind)),
+      ),
+      el(
+        'td',
+        { class: 'op' },
         el(
-          'span',
-          { class: 'badge ' + (s.kind === 'milestone' ? 'badge-milestone' : 'badge-daily') },
-          s.kind === 'milestone' ? '迁移前' : '日常',
+          'button',
+          {
+            class: 'row-btn',
+            type: 'button',
+            onclick: () => void doRestore(() => shell.backup.restoreFromList(s.name)),
+          },
+          '恢复',
         ),
       ),
     ),
@@ -121,6 +143,7 @@ function renderList(snapshots) {
         el('th', {}, '备份时间'),
         el('th', { class: 'num' }, '大小'),
         el('th', {}, '类型'),
+        el('th', { class: 'op' }, '操作'),
       ),
     ),
     el('tbody', {}, ...rows),
@@ -176,15 +199,39 @@ function openDir() {
   });
 }
 
+/**
+ * 恢复：确认在主进程弹原生框；用户确认后应用会重启，下面的 Promise 通常不会 resolve。
+ * 触发期间禁用整页所有按钮并给出提示；只有取消 / 出错才把按钮放开。
+ */
+async function doRestore(trigger) {
+  const allBtns = [
+    btnBackupNow,
+    btnBackupTo,
+    btnOpenDir,
+    btnRestoreFile,
+    ...document.querySelectorAll('.row-btn'),
+  ];
+  for (const b of allBtns) b.disabled = true;
+  toast('正在准备恢复，确认后应用会重启…');
+  try {
+    unwrap(await trigger());
+    toast('正在重启…'); // 走到这说明进程还没退，稍等即重启
+  } catch (err) {
+    if (err.code !== 'IO_CANCELLED') toast(`恢复失败：${err.message}`);
+    for (const b of allBtns) b.disabled = false;
+  }
+}
+
 /* ───────────────────────── 启动 ───────────────────────── */
 
 if (!shell || !shell.backup) {
   // preload 没跑起来 / 接口没暴露：给个明确错误态，别让页面看起来像在转圈
   showState('无法连接到应用后台，备份功能暂不可用。', true);
-  for (const b of [btnBackupNow, btnBackupTo, btnOpenDir]) b.disabled = true;
+  for (const b of [btnBackupNow, btnBackupTo, btnOpenDir, btnRestoreFile]) b.disabled = true;
 } else {
   btnBackupNow.addEventListener('click', () => void backupNow());
   btnBackupTo.addEventListener('click', () => void backupToFolder());
   btnOpenDir.addEventListener('click', () => void openDir());
+  btnRestoreFile.addEventListener('click', () => void doRestore(() => shell.backup.restoreFromFile()));
   void loadList();
 }

@@ -91,6 +91,7 @@
     .card + .card { margin-top: 18px; }
     .card-title { font-family: var(--font-display); font-size: 16px; font-weight: 700; margin: 0 0 6px; }
     .card-note { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+    .card-note.after-list { margin: 18px 0 0; }
 
     /* ─── 按钮（复用 reports.html）───────────────────────────────────── */
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
@@ -124,6 +125,19 @@
     }
     .badge-daily { color: var(--muted); }
     .badge-milestone { color: var(--cc-8); border-color: color-mix(in oklch, var(--cc-8) 40%, var(--border)); }
+    .badge-prerestore { color: var(--cc-1); border-color: color-mix(in oklch, var(--cc-1) 40%, var(--border)); }
+
+    /* 行内「恢复」按钮：描边小胶囊，右对齐 */
+    .data-table td.op, .data-table th.op { text-align: right; }
+    .row-btn {
+      min-height: 32px; padding: 0 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-pill);
+      background: var(--surface); color: var(--fg); font-weight: 600; font-size: 12px;
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .row-btn:hover { border-color: var(--muted); }
+    .row-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .row-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
     .state {
       padding: 22px 8px; text-align: center; color: var(--muted); font-size: 13px;
@@ -205,23 +219,30 @@
         <button class="btn btn-primary" id="btn-backup-now" type="button">立即备份</button>
         <button class="btn" id="btn-backup-to" type="button">另存一份到…</button>
         <button class="btn" id="btn-open-dir" type="button">打开备份目录</button>
+        <button class="btn" id="btn-restore-file" type="button">从文件恢复…</button>
       </div>
 
       <div id="backup-list-region" aria-live="polite">
         <div class="state" id="backup-state">正在加载备份列表…</div>
       </div>
 
+      <p class="card-note after-list">
+        点某一行的「恢复」、或「从文件恢复…」，即可用那份备份恢复数据。恢复前会自动给当前数据
+        留一份底（类型标「恢复前」），确认后应用会重启完成恢复。恢复是整库替换——快照之后录入的
+        数据会回退。
+      </p>
+
       <details class="restore-help">
-        <summary>数据库文件损坏了，怎么用备份恢复？</summary>
+        <summary>应用打不开、连这个页面都进不来，怎么办？</summary>
         <ol>
           <li>完全退出应用。</li>
-          <li>点上方「打开备份目录」，找到要恢复的那份快照（文件名带日期时间；<code>-premigrate-v</code> 的是某次升级前留的）。</li>
+          <li>找到用户数据目录下的 <code>backups/</code>，挑要恢复的那份快照（文件名带日期时间）。</li>
           <li>先把当前的 <code>dance-studio.db</code> 改名留底（例如加个 <code>.bak</code>）。</li>
           <li>把选中的快照复制过去，改名为 <code>dance-studio.db</code>。</li>
           <li>删除同目录下的 <code>dance-studio.db-wal</code> 和 <code>dance-studio.db-shm</code>（若存在）。</li>
           <li>重新打开应用。结构版本若偏旧，应用会自动升级到最新。</li>
         </ol>
-        <p class="restore-help-more">更详细的说明见项目内的 <code>docs/backup-and-restore.md</code>。</p>
+        <p class="restore-help-more">完整说明见项目内的 <code>docs/backup-and-restore.md</code>。</p>
       </details>
     </section>
   </main>

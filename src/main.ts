@@ -7,10 +7,15 @@
  */
 import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'node:path';
-import { getDb } from './db/connection';
+import { getDb, resolveDbPath } from './db/connection';
 import { run as runMigrations, LATEST_VERSION } from './db/migrations';
 import { createMilestoneSnapshot, ensureDailySnapshot } from './db/backup';
-import { backupDir } from './paths';
+import {
+  applyPendingRestore,
+  clearPendingRestore,
+  readPendingRestore,
+} from './db/restore';
+import { backupDir, userDataDir } from './paths';
 import { registerIpc } from './ipc/register';
 
 /** 每日快照保留份数（迁移前里程碑不受此限，一律留存）。 */
@@ -19,6 +24,32 @@ const KEEP_DAILY_SNAPSHOTS = 20;
 // 单窗口引用挂在模块作用域：若只用局部变量，窗口对象可能被垃圾回收，
 // 导致窗口在运行中突然白屏或关闭。
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * 若上次退出前留下了「恢复」标记，就在这里换库。
+ * 必须在 getDb() 之前调用——数据库连接一旦打开，文件就不能安全替换了。
+ * 成败都清掉标记，避免下次启动又试一遍；失败时提示用户并用原数据继续启动。
+ */
+function maybeApplyPendingRestore(): void {
+  const dir = userDataDir();
+  const pending = readPendingRestore(dir);
+  if (!pending) return;
+  try {
+    const res = applyPendingRestore(resolveDbPath(), pending.source);
+    console.log(
+      `[restore] 已用备份恢复：${pending.source}（原库留底：${res.preservedTo ?? '（原本无库）'}）`,
+    );
+  } catch (err) {
+    console.error('[restore] 恢复失败，将用原数据启动：', err);
+    dialog.showErrorBox(
+      '恢复失败',
+      '用备份恢复数据没有成功，应用会用原来的数据启动。\n\n' +
+        (err instanceof Error ? err.message : String(err)),
+    );
+  } finally {
+    clearPendingRestore(dir);
+  }
+}
 
 /**
  * 打开数据库并把结构迁移到最新版。
@@ -106,6 +137,8 @@ function createMainWindow(): void {
 // app ready 后再建窗口：这是 Electron 能安全创建 BrowserWindow 的最早时机
 app.whenReady().then(
   () => {
+    // 换库要赶在 getDb() 之前——放在最前面
+    maybeApplyPendingRestore();
     // 建窗口前先把数据库准备好、把 IPC 服务台支起来，让首个渲染页面一加载就能读写数据
     initDatabase();
     registerIpc();

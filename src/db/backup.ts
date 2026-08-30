@@ -31,12 +31,14 @@ import type { SnapshotMeta } from '../shared/types';
 
 /** 文件名里这段标记一份「迁移前里程碑」快照。 */
 const MILESTONE_MARKER = '-premigrate-v';
+/** 文件名里这段标记一份「恢复前留底」快照。 */
+const PRE_RESTORE_MARKER = '-pre-restore';
 
 /**
- * 匹配本模块产出的快照文件名：`dance-studio-YYYYMMDD-HHmmss[-premigrate-vN].db`。
+ * 匹配本模块产出的快照文件名：`dance-studio-YYYYMMDD-HHmmss[-<标签>].db`。
  * 用「秒」而非「分」精度，是为了同一分钟内两次手动备份不会重名互相覆盖。
  */
-const SNAPSHOT_RE = /^dance-studio-\d{8}-\d{6}(?:-premigrate-v\d+)?\.db$/;
+const SNAPSHOT_RE = /^dance-studio-\d{8}-\d{6}(?:-[a-z0-9-]+)?\.db$/;
 
 /** 本地时间的 `YYYYMMDD-HHmmss` 串，用作快照文件名的一部分。 */
 function localStamp(d = new Date()): string {
@@ -65,16 +67,21 @@ function verifyFile(file: string): { userVersion: number } {
   }
 }
 
-/** 由已落地的快照文件读出元信息。`kind` 由文件名是否含里程碑标记判定。 */
+/** 由已落地的快照文件读出元信息。`kind` 由文件名里的标签判定。 */
 function statMeta(file: string, userVersion?: number): SnapshotMeta {
   const name = path.basename(file);
   const st = fs.statSync(file);
+  const kind: SnapshotMeta['kind'] = name.includes(MILESTONE_MARKER)
+    ? 'milestone'
+    : name.includes(PRE_RESTORE_MARKER)
+      ? 'pre-restore'
+      : 'daily';
   const meta: SnapshotMeta = {
     name,
     path: file,
     bytes: st.size,
     createdAt: st.mtime.toISOString(),
-    kind: name.includes(MILESTONE_MARKER) ? 'milestone' : 'daily',
+    kind,
   };
   if (userVersion !== undefined) meta.userVersion = userVersion;
   return meta;
@@ -240,9 +247,9 @@ export interface PruneOptions {
 }
 
 /**
- * 轮换：日常快照只留最近 `keep` 份，多出来的旧的删掉。
- * 「迁移前里程碑」快照一律保留——升级出问题时那是唯一的旧结构还原点。
- * 返回被删文件的路径数组。
+ * 轮换：`daily` 快照只留最近 `keep` 份，多出来的旧的删掉。
+ * `milestone`（迁移前）和 `pre-restore`（恢复前留底）一律保留——它们都是「出事时的
+ * 唯一还原点」，不该被日常轮换冲掉。返回被删文件的路径数组。
  */
 export function pruneSnapshots(opts: PruneOptions): string[] {
   const daily = listSnapshots(opts.dir).filter((s) => s.kind === 'daily');
