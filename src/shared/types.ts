@@ -588,6 +588,8 @@ export interface RosterCandidate {
   remainingLessons: number | null;
   cardExpireDate: string | null;
   status: string;
+  /** students.dance_types 解析后的数组；渲染层据此拼舞种下拉 */
+  danceTypes: string[];
 }
 
 /** 按月汇总的一行：某学员某月。仅导出用（无独立 IPC）。 */

@@ -104,12 +104,14 @@ test('分页：total 是过滤后的总数，rows 只有一页', () => {
   assert.equal(p2.rows.length, 2);
 });
 
-test('listRosterCandidates：舞种包含匹配', () => {
+test('listRosterCandidates：舞种包含匹配，且带回解析后的 danceTypes 数组', () => {
   const jazz = listRosterCandidates({ danceType: '爵士' });
   assert.equal(jazz.length, 1);
   assert.equal(jazz[0]?.name, 'Alice');
+  assert.deepEqual(jazz[0]?.danceTypes, ['街舞', '爵士']);
   const latin = listRosterCandidates({ danceType: '拉丁' });
   assert.equal(latin[0]?.name, 'Bob');
+  assert.deepEqual(latin[0]?.danceTypes, ['拉丁']);
 });
 
 test('listRosterCandidates：keyword + 软删排除', () => {

@@ -649,18 +649,316 @@ function renderQuick() {
   renderQuickInto(view);
 }
 
-/* ───────────────────────── 占位视图（后续 issue 替换）───────────────────────── */
+/* ───────────────────────── 批量点名（#/roster）───────────────────────── */
 
-function renderComingSoon(hash, label) {
-  renderTabs(hash);
-  view.replaceChildren(
+const rosterState = {
+  danceType: '',
+  keyword: '',
+  candidates: [],
+  danceTypeOptions: [],
+  /** Map<studentId, { type, lessons }> */
+  picks: new Map(),
+  summary: null,
+};
+let rosterSearchDebounce = null;
+
+async function rosterFetch({ withOptions } = {}) {
+  const list = unwrap(
+    await shell.attendance.rosterCandidates({
+      danceType: rosterState.danceType || undefined,
+      keyword: rosterState.keyword.trim() || undefined,
+    }),
+  );
+  rosterState.candidates = list;
+  if (withOptions) {
+    const all = unwrap(await shell.attendance.rosterCandidates({}));
+    rosterState.danceTypeOptions = [
+      ...new Set(all.flatMap((c) => c.danceTypes || [])),
+    ].sort((a, b) => a.localeCompare(b, 'zh'));
+  }
+}
+
+function rosterCandidateRow(c) {
+  const pick = rosterState.picks.get(c.id);
+  const low = c.remainingLessons != null && Number(c.remainingLessons) <= LOW_BALANCE_AT;
+
+  const check = el('input', {
+    type: 'checkbox',
+    checked: pick ? true : undefined,
+    'aria-label': `勾选 ${c.name}`,
+    onchange: (e) => {
+      if (e.target.checked) rosterState.picks.set(c.id, { type: '出勤', lessons: 1 });
+      else rosterState.picks.delete(c.id);
+      paintRosterList();
+    },
+  });
+
+  const left = el(
+    'label',
+    { class: 'candidate' + (pick ? ' picked' : ''), style: 'flex:1' },
+    check,
     el(
       'div',
-      { class: 'empty' },
-      el('strong', { text: `${label}即将上线` }),
-      '该视图将在后续版本接入。',
+      { class: 'c-main' },
+      el('div', { class: 'c-name', text: c.name }),
+      el('div', {
+        class: 'c-sub',
+        text: `${c.phone || '无手机号'}${c.cardExpireDate ? ' · 卡到期 ' + c.cardExpireDate : ''}`,
+      }),
+    ),
+    el('span', {
+      class: 'c-bal' + (low ? ' low' : ''),
+      text: `剩 ${c.remainingLessons == null ? '—' : c.remainingLessons} 节`,
+    }),
+  );
+
+  if (!pick) return el('div', { class: 'roster-row', style: 'display:flex;gap:10px;align-items:center' }, left);
+
+  const stateGroup = el(
+    'div',
+    { class: 'state-group' },
+    ...EVENT_TYPES.map((t) =>
+      el('button', {
+        type: 'button',
+        class: 'state-btn' + (pick.type === t ? ' on' : ''),
+        text: t,
+        onclick: () => {
+          rosterState.picks.set(c.id, { type: t, lessons: pick.lessons });
+          paintRosterList();
+        },
+      }),
     ),
   );
+
+  const lessons = el('input', {
+    type: 'number',
+    min: '1',
+    step: '1',
+    value: String(pick.type === '出勤' ? pick.lessons : 0),
+    disabled: pick.type !== '出勤' || undefined,
+    style: 'width:64px;min-height:36px',
+    'aria-label': `${c.name} 扣课时数`,
+    onchange: (e) => {
+      rosterState.picks.set(c.id, { type: pick.type, lessons: Number(e.target.value) || 1 });
+    },
+  });
+
+  return el(
+    'div',
+    { class: 'roster-row', style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' },
+    left,
+    stateGroup,
+    lessons,
+  );
+}
+
+function paintRosterList() {
+  const slot = document.getElementById('roster-list');
+  if (!slot) return;
+  const countPicked = rosterState.picks.size;
+  slot.replaceChildren(
+    el('div', { class: 'toolbar-label', text: `已勾选 ${countPicked} 人` }),
+    ...(rosterState.candidates.length === 0
+      ? [el('div', { class: 'field-hint', text: '没有匹配的学员' })]
+      : rosterState.candidates.map(rosterCandidateRow)),
+  );
+}
+
+async function submitRoster() {
+  const entries = [];
+  for (const c of rosterState.candidates) {
+    const pick = rosterState.picks.get(c.id);
+    if (!pick) continue;
+    entries.push({
+      studentId: c.id,
+      type: pick.type,
+      lessons: pick.type === '出勤' ? pick.lessons : undefined,
+    });
+  }
+  // 也带上不在当前筛选结果里、但之前勾过的（理论上少见，稳妥起见）
+  for (const [sid, pick] of rosterState.picks) {
+    if (rosterState.candidates.some((c) => c.id === sid)) continue;
+    entries.push({
+      studentId: sid,
+      type: pick.type,
+      lessons: pick.type === '出勤' ? pick.lessons : undefined,
+    });
+  }
+  if (entries.length === 0) {
+    toast('请至少勾选一名学员');
+    return;
+  }
+
+  const payload = {
+    attendDate: document.getElementById('r-date').value || undefined,
+    attendTime: document.getElementById('r-time').value || null,
+    className: document.getElementById('r-class').value || null,
+    teacher: document.getElementById('r-teacher').value || null,
+    operator: document.getElementById('r-operator').value || null,
+    entries,
+  };
+  try {
+    const res = unwrap(await shell.attendance.batchCheckIn(payload));
+    const nameOf = (sid) => {
+      const c = rosterState.candidates.find((x) => x.id === sid);
+      return c ? c.name : `#${sid}`;
+    };
+    rosterState.summary = {
+      succeeded: res.succeeded,
+      skipped: res.skipped,
+      failures: res.rows.filter((r) => !r.ok).map((r) => `${nameOf(r.studentId)}：${r.reason}`),
+    };
+    rosterState.picks.clear();
+    await rosterFetch({});
+    renderRosterInto(view);
+    toast(`点名完成 · 成功 ${res.succeeded}，跳过 ${res.skipped}`);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function renderRosterInto(container) {
+  const common = el(
+    'div',
+    { class: 'form-group' },
+    el('div', { class: 'group-title', text: '这节课' }),
+    el(
+      'div',
+      { class: 'field-grid' },
+      el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'r-date', text: '日期' }),
+        el('input', { id: 'r-date', type: 'date', value: todayYmd() }),
+      ),
+      el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'r-time', text: '时间' }),
+        el('input', { id: 'r-time', type: 'time' }),
+      ),
+      el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'r-class', text: '课程名' }),
+        el('input', { id: 'r-class', type: 'text', maxlength: '40' }),
+      ),
+      el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'r-teacher', text: '老师' }),
+        el('input', { id: 'r-teacher', type: 'text', maxlength: '20' }),
+      ),
+      el(
+        'div',
+        { class: 'field' },
+        el('label', { for: 'r-operator', text: '经办人' }),
+        el('input', { id: 'r-operator', type: 'text', maxlength: '20' }),
+      ),
+    ),
+  );
+
+  const danceSel = el(
+    'select',
+    {
+      class: 'toolbar-select',
+      'aria-label': '舞种',
+      onchange: async (e) => {
+        rosterState.danceType = e.target.value;
+        await rosterFetch({});
+        paintRosterList();
+      },
+    },
+    el('option', { value: '', text: '全部舞种' }),
+    ...rosterState.danceTypeOptions.map((d) =>
+      el('option', { value: d, text: d, selected: rosterState.danceType === d || undefined }),
+    ),
+  );
+  const kw = el('input', {
+    class: 'toolbar-search',
+    type: 'search',
+    placeholder: '姓名或手机号',
+    value: rosterState.keyword,
+    oninput: (e) => {
+      rosterState.keyword = e.target.value;
+      clearTimeout(rosterSearchDebounce);
+      rosterSearchDebounce = setTimeout(async () => {
+        await rosterFetch({});
+        paintRosterList();
+      }, 220);
+    },
+  });
+  const allAttendBtn = el('button', {
+    class: 'btn btn-sm',
+    text: '全部设为出勤',
+    onclick: () => {
+      for (const c of rosterState.candidates) rosterState.picks.set(c.id, { type: '出勤', lessons: 1 });
+      paintRosterList();
+    },
+  });
+
+  const listSlot = el('div', { id: 'roster-list', class: 'candidate-list', style: 'max-height:none' });
+
+  const summaryBox = rosterState.summary
+    ? el(
+        'div',
+        { class: 'summary-box' },
+        el('div', {
+          class: 'sum-head',
+          text: `上次点名：成功 ${rosterState.summary.succeeded}，跳过 ${rosterState.summary.skipped}`,
+        }),
+        rosterState.summary.failures.length > 0 &&
+          el('ul', {}, ...rosterState.summary.failures.map((f) => el('li', { text: f }))),
+      )
+    : null;
+
+  container.replaceChildren(
+    ...[
+      el(
+        'div',
+        { class: 'page-head' },
+        el(
+          'div',
+          {},
+          el('h1', { class: 'page-title', text: '批量点名' }),
+          el('p', { class: 'page-sub', text: '填这节课的信息，对花名册逐个勾' }),
+        ),
+      ),
+      summaryBox,
+      common,
+      el(
+        'div',
+        { class: 'toolbar' },
+        el('span', { class: 'toolbar-label', text: '花名册' }),
+        danceSel,
+        kw,
+        allAttendBtn,
+      ),
+      listSlot,
+      el(
+        'div',
+        { class: 'form-actions' },
+        el('button', { class: 'btn btn-primary', text: '提交点名', onclick: submitRoster }),
+      ),
+    ].filter(Boolean),
+  );
+  paintRosterList();
+}
+
+async function renderRoster() {
+  renderTabs('#/roster');
+  rosterState.picks.clear();
+  rosterState.summary = null;
+  rosterState.danceType = '';
+  rosterState.keyword = '';
+  view.replaceChildren(el('div', { class: 'empty', text: '加载中…' }));
+  try {
+    await rosterFetch({ withOptions: true });
+    renderRosterInto(view);
+  } catch (err) {
+    toast(err.message);
+    view.replaceChildren(el('div', { class: 'empty', text: '加载失败：' + err.message }));
+  }
 }
 
 /* ───────────────────────── 路由 ───────────────────────── */
@@ -668,7 +966,7 @@ function renderComingSoon(hash, label) {
 function route() {
   const hash = window.location.hash || '#/records';
   if (hash.startsWith('#/quick')) return renderQuick();
-  if (hash.startsWith('#/roster')) return renderComingSoon('#/roster', '批量点名');
+  if (hash.startsWith('#/roster')) return renderRoster();
   return renderRecords();
 }
 

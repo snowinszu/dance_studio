@@ -264,18 +264,35 @@ export function listRosterCandidates(query: RosterCandidateQuery = {}): RosterCa
     where.push(`(name LIKE @kw ESCAPE '\\' OR phone_primary LIKE @kw ESCAPE '\\')`);
   }
 
-  return db
+  const rows = db
     .prepare(
       `SELECT id,
               name,
               phone_primary     AS phone,
               remaining_lessons AS remainingLessons,
               card_expire_date  AS cardExpireDate,
-              status
+              status,
+              dance_types       AS danceTypesJson
          FROM students
         WHERE ${where.join(' AND ')}
         ORDER BY name COLLATE NOCASE
         LIMIT 500`,
     )
-    .all(params) as RosterCandidate[];
+    .all(params) as (Omit<RosterCandidate, 'danceTypes'> & { danceTypesJson: string })[];
+
+  return rows.map(({ danceTypesJson, ...rest }) => ({
+    ...rest,
+    danceTypes: parseJsonArray(danceTypesJson),
+  }));
+}
+
+/** 把 dance_types 那串 JSON 数组解析成字符串数组；坏数据按空数组处理。 */
+function parseJsonArray(raw: unknown): string[] {
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
 }
