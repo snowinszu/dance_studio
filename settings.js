@@ -12,6 +12,8 @@
 const shell = window.studioShell;
 const listRegion = document.getElementById('backup-list-region');
 const btnBackupNow = document.getElementById('btn-backup-now');
+const btnBackupTo = document.getElementById('btn-backup-to');
+const btnOpenDir = document.getElementById('btn-open-dir');
 const toastEl = document.getElementById('toast');
 
 /* ───────────────────────── 小工具 ───────────────────────── */
@@ -136,20 +138,42 @@ async function loadList() {
   }
 }
 
-async function backupNow() {
-  btnBackupNow.disabled = true;
-  const label = btnBackupNow.textContent;
-  btnBackupNow.textContent = '备份中…';
+/** 备份类操作的公共外壳：按钮进行中态 + 统一的成功/失败处理。 */
+async function runBackupAction(btn, busyText, action) {
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = busyText;
   try {
+    await action();
+  } catch (err) {
+    // 用户在目录选择框点了取消：这是正常操作，不当作错误弹提示
+    if (err.code !== 'IO_CANCELLED') toast(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+function backupNow() {
+  return runBackupAction(btnBackupNow, '备份中…', async () => {
     const meta = unwrap(await shell.backup.create());
     toast(`已备份到 ${meta.path}`);
     await loadList();
-  } catch (err) {
-    toast(`备份失败：${err.message}`);
-  } finally {
-    btnBackupNow.disabled = false;
-    btnBackupNow.textContent = label;
-  }
+  });
+}
+
+function backupToFolder() {
+  return runBackupAction(btnBackupTo, '备份中…', async () => {
+    const { copiedTo } = unwrap(await shell.backup.createToFolder());
+    toast(`已另存到 ${copiedTo}`);
+    await loadList();
+  });
+}
+
+function openDir() {
+  return runBackupAction(btnOpenDir, '打开中…', async () => {
+    unwrap(await shell.backup.reveal());
+  });
 }
 
 /* ───────────────────────── 启动 ───────────────────────── */
@@ -157,10 +181,10 @@ async function backupNow() {
 if (!shell || !shell.backup) {
   // preload 没跑起来 / 接口没暴露：给个明确错误态，别让页面看起来像在转圈
   showState('无法连接到应用后台，备份功能暂不可用。', true);
-  btnBackupNow.disabled = true;
+  for (const b of [btnBackupNow, btnBackupTo, btnOpenDir]) b.disabled = true;
 } else {
-  btnBackupNow.addEventListener('click', () => {
-    void backupNow();
-  });
+  btnBackupNow.addEventListener('click', () => void backupNow());
+  btnBackupTo.addEventListener('click', () => void backupToFolder());
+  btnOpenDir.addEventListener('click', () => void openDir());
   void loadList();
 }

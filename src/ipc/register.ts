@@ -5,7 +5,9 @@
  * 递单子，服务台叫后台（domain 层）办，办好把结果装进统一信封递回去。
  * 后台如果撂挑子（抛异常），服务台也不让异常飞出去，而是回一个「办不成 + 原因」的信封。
  */
-import { dialog, ipcMain } from 'electron';
+import { dialog, ipcMain, shell } from 'electron';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type {
   AllocationInput,
   AllocationListQuery,
@@ -635,21 +637,54 @@ export function registerIpc(): void {
   handle(CH.reportsHomeSummary, () => reportsRepo.getHomeSummary());
 
   // —— 数据库快照备份 ——
-  handle(CH.backupCreate, async () => {
+  // 完整性校验失败（BACKUP_VERIFY_FAILED）原样透出；其余（磁盘满 / 无写权限……）
+  // 归到 IO_WRITE_FAILED，带上原始 message 方便用户判断。
+  const makeSnapshot = async () => {
     try {
       return await createSnapshot({ dir: backupDir() });
     } catch (err) {
-      // 完整性校验失败（BACKUP_VERIFY_FAILED）原样透出；其余（磁盘满 / 无写权限……）
-      // 归到 IO_WRITE_FAILED，带上原始 message 方便用户判断
       if (err instanceof AppError) throw err;
       throw new AppError(
         'IO_WRITE_FAILED',
         `备份写入失败：${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  });
+  };
+
+  handle(CH.backupCreate, () => makeSnapshot());
 
   handle(CH.backupList, () => listSnapshots(backupDir()));
+
+  handle(CH.backupReveal, () => {
+    const dir = backupDir();
+    fs.mkdirSync(dir, { recursive: true }); // 首次、或被手动删空时，先建出来再打开
+    void shell.openPath(dir);
+    return { dir };
+  });
+
+  handle(CH.backupCreateToFolder, async () => {
+    const picked = await dialog.showOpenDialog({
+      title: '选择另存目录（U 盘 / 网盘等）',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    const targetDir = picked.filePaths[0];
+    if (picked.canceled || !targetDir) {
+      throw new AppError('IO_CANCELLED', '已取消');
+    }
+    // 先在默认备份目录正常生成一份（也进列表），再往用户选的目录拷一份。
+    // 跨盘时 rename 会失败，所以这里用 copyFile。
+    const primary = await makeSnapshot();
+    const copiedTo = path.join(targetDir, primary.name);
+    try {
+      fs.copyFileSync(primary.path, copiedTo);
+    } catch (err) {
+      throw new AppError(
+        'IO_WRITE_FAILED',
+        `已在本机备份成功，但复制到所选目录失败：${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return { primary, copiedTo };
+  });
 
   handle(CH.reportsExportAttendanceByClass, async (args?: { year?: number }) => {
     const year = Number(args?.year);

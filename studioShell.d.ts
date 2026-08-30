@@ -228,6 +228,10 @@ declare global {
       create(): Promise<IpcResult<SnapshotMeta>>;
       /** 列出备份目录里的全部快照，按创建时间倒序。 */
       list(): Promise<IpcResult<SnapshotMeta[]>>;
+      /** 在系统文件管理器中打开备份目录。 */
+      reveal(): Promise<IpcResult<{ dir: string }>>;
+      /** 弹目录选择框，生成一份日常快照并额外复制到所选目录；取消时返回 IO_CANCELLED。 */
+      createToFolder(): Promise<IpcResult<{ primary: SnapshotMeta; copiedTo: string }>>;
     };
   }
 

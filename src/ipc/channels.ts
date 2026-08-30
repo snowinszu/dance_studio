@@ -104,6 +104,8 @@ export const CH = {
   // 数据库快照备份
   backupCreate: 'backup:create',
   backupList: 'backup:list',
+  backupReveal: 'backup:reveal',
+  backupCreateToFolder: 'backup:createToFolder',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

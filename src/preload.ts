@@ -92,6 +92,8 @@ const CH = {
   reportsHomeSummary: 'reports:homeSummary',
   backupCreate: 'backup:create',
   backupList: 'backup:list',
+  backupReveal: 'backup:reveal',
+  backupCreateToFolder: 'backup:createToFolder',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -212,6 +214,8 @@ const api = {
   backup: {
     create: () => invoke(CH.backupCreate),
     list: () => invoke(CH.backupList),
+    reveal: () => invoke(CH.backupReveal),
+    createToFolder: () => invoke(CH.backupCreateToFolder),
   },
 };
 

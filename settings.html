@@ -130,6 +130,26 @@
     }
     .state-error { color: var(--cc-1); }
 
+    /* ─── 手动恢复说明（次级信息，可折叠）──────────────────────────── */
+    .restore-help {
+      margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px;
+      font-size: 13px; color: var(--muted);
+    }
+    .restore-help summary {
+      cursor: pointer; font-weight: 600; color: var(--fg); list-style: none;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .restore-help summary::-webkit-details-marker { display: none; }
+    .restore-help summary::before { content: '▸'; color: var(--muted); }
+    .restore-help[open] summary::before { content: '▾'; }
+    .restore-help summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .restore-help ol { margin: 12px 0 0; padding-left: 20px; line-height: 1.8; }
+    .restore-help code {
+      font-family: var(--font-mono); font-size: 12px;
+      background: var(--fg-soft); padding: 1px 5px; border-radius: 5px;
+    }
+    .restore-help-more { margin: 12px 0 0; }
+
     /* ─── toast（复用 reports.html）────────────────────────────────── */
     #toast {
       position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
@@ -183,11 +203,26 @@
 
       <div class="actions">
         <button class="btn btn-primary" id="btn-backup-now" type="button">立即备份</button>
+        <button class="btn" id="btn-backup-to" type="button">另存一份到…</button>
+        <button class="btn" id="btn-open-dir" type="button">打开备份目录</button>
       </div>
 
       <div id="backup-list-region" aria-live="polite">
         <div class="state" id="backup-state">正在加载备份列表…</div>
       </div>
+
+      <details class="restore-help">
+        <summary>数据库文件损坏了，怎么用备份恢复？</summary>
+        <ol>
+          <li>完全退出应用。</li>
+          <li>点上方「打开备份目录」，找到要恢复的那份快照（文件名带日期时间；<code>-premigrate-v</code> 的是某次升级前留的）。</li>
+          <li>先把当前的 <code>dance-studio.db</code> 改名留底（例如加个 <code>.bak</code>）。</li>
+          <li>把选中的快照复制过去，改名为 <code>dance-studio.db</code>。</li>
+          <li>删除同目录下的 <code>dance-studio.db-wal</code> 和 <code>dance-studio.db-shm</code>（若存在）。</li>
+          <li>重新打开应用。结构版本若偏旧，应用会自动升级到最新。</li>
+        </ol>
+        <p class="restore-help-more">更详细的说明见项目内的 <code>docs/backup-and-restore.md</code>。</p>
+      </details>
     </section>
   </main>
 
