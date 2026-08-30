@@ -20,6 +20,8 @@ files:
   - students.js
   - inventory.html
   - inventory.js
+  - attendance.html
+  - attendance.js
   - colors_and_type.css
   - package.json
 
