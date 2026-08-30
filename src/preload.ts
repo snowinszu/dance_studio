@@ -59,6 +59,18 @@ const CH = {
   attendanceDownloadTemplate: 'attendance:downloadTemplate',
   attendancePickImportFile: 'attendance:pickImportFile',
   attendanceImport: 'attendance:import',
+  courseTeacherList: 'course:teacherList',
+  courseTeacherCreate: 'course:teacherCreate',
+  courseTeacherUpdate: 'course:teacherUpdate',
+  courseTeacherDelete: 'course:teacherDelete',
+  courseClassList: 'course:classList',
+  courseClassGet: 'course:classGet',
+  courseClassCreate: 'course:classCreate',
+  courseClassUpdate: 'course:classUpdate',
+  courseClassDelete: 'course:classDelete',
+  courseRosterList: 'course:rosterList',
+  courseRosterAdd: 'course:rosterAdd',
+  courseRosterRemove: 'course:rosterRemove',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -132,6 +144,21 @@ const api = {
     downloadTemplate: () => invoke(CH.attendanceDownloadTemplate),
     pickImportFile: () => invoke(CH.attendancePickImportFile),
     import: (args: unknown) => invoke(CH.attendanceImport, args),
+  },
+
+  course: {
+    teacherList: (opts?: unknown) => invoke(CH.courseTeacherList, opts),
+    teacherCreate: (input: unknown) => invoke(CH.courseTeacherCreate, input),
+    teacherUpdate: (id: number, input: unknown) => invoke(CH.courseTeacherUpdate, id, input),
+    teacherDelete: (id: number) => invoke(CH.courseTeacherDelete, id),
+    classList: (query?: unknown) => invoke(CH.courseClassList, query),
+    classGet: (id: number) => invoke(CH.courseClassGet, id),
+    classCreate: (input: unknown) => invoke(CH.courseClassCreate, input),
+    classUpdate: (id: number, input: unknown) => invoke(CH.courseClassUpdate, id, input),
+    classDelete: (id: number) => invoke(CH.courseClassDelete, id),
+    rosterList: (classId: number) => invoke(CH.courseRosterList, classId),
+    rosterAdd: (input: unknown) => invoke(CH.courseRosterAdd, input),
+    rosterRemove: (input: unknown) => invoke(CH.courseRosterRemove, input),
   },
 };
 

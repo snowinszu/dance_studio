@@ -12,6 +12,8 @@ import type {
   AttendanceCorrectionInput,
   AttendanceListQuery,
   BatchCheckInInput,
+  CourseClassInput,
+  CourseClassListQuery,
   CustomFieldInput,
   CustomFieldPatch,
   InventoryItemInput,
@@ -20,8 +22,11 @@ import type {
   LessonAdjustmentInput,
   ListQuery,
   QuickCheckInInput,
+  RosterAddInput,
   RosterCandidateQuery,
+  RosterRemoveInput,
   StudentInput,
+  TeacherInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
 import {
@@ -51,6 +56,13 @@ import * as fieldDefsRepo from '../domain/field-defs.repo';
 import * as tagsRepo from '../domain/tags.repo';
 import * as inventoryRepo from '../domain/inventory.repo';
 import * as attendanceRepo from '../domain/attendance.repo';
+import * as courseRepo from '../domain/course.repo';
+import {
+  validateClass,
+  validateRosterAdd,
+  validateRosterRemove,
+  validateTeacher,
+} from '../domain/course.validation';
 import { buildSchema, validateStudent } from '../domain/validation';
 import { exportStudents } from '../io/export-xlsx';
 import { buildTemplate, importStudents, readImportPreview } from '../io/import-xlsx';
@@ -408,4 +420,83 @@ export function registerIpc(): void {
       return importRecords({ filePath: args.filePath, mapping: args.mapping ?? {} });
     },
   );
+
+  // —— 课程管理：老师 / 班级 / 花名册 ——
+  handle(CH.courseTeacherList, (opts?: { includeInactive?: boolean }) =>
+    courseRepo.teacherList(opts ?? {}),
+  );
+
+  handle(CH.courseTeacherCreate, (input?: TeacherInput) => {
+    const { values, errors } = validateTeacher(input ?? ({} as TeacherInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.teacherCreate(values);
+  });
+
+  handle(CH.courseTeacherUpdate, (id?: number, input?: TeacherInput) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少老师 id');
+    const { values, errors } = validateTeacher(input ?? ({} as TeacherInput), { isEdit: true });
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.teacherUpdate(Number(id), values);
+  });
+
+  handle(CH.courseTeacherDelete, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少老师 id');
+    return courseRepo.teacherSoftDelete(Number(id));
+  });
+
+  handle(CH.courseClassList, (query?: CourseClassListQuery) =>
+    courseRepo.classList(query ?? {}),
+  );
+
+  handle(CH.courseClassGet, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少班级 id');
+    return courseRepo.classGet(Number(id));
+  });
+
+  handle(CH.courseClassCreate, (input?: CourseClassInput) => {
+    const { values, errors } = validateClass(input ?? ({} as CourseClassInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.classCreate(values);
+  });
+
+  handle(CH.courseClassUpdate, (id?: number, input?: CourseClassInput) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少班级 id');
+    const { values, errors } = validateClass(input ?? ({} as CourseClassInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.classUpdate(Number(id), values);
+  });
+
+  handle(CH.courseClassDelete, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少班级 id');
+    return courseRepo.classSoftDelete(Number(id));
+  });
+
+  handle(CH.courseRosterList, (classId?: number) => {
+    if (!Number.isFinite(Number(classId))) throw new AppError('BAD_REQUEST', '缺少班级 id');
+    return courseRepo.rosterList(Number(classId));
+  });
+
+  handle(CH.courseRosterAdd, (input?: RosterAddInput) => {
+    const { values, errors } = validateRosterAdd(input ?? ({} as RosterAddInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.rosterAdd(values);
+  });
+
+  handle(CH.courseRosterRemove, (input?: RosterRemoveInput) => {
+    const { values, errors } = validateRosterRemove(input ?? ({} as RosterRemoveInput));
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return courseRepo.rosterRemove(values);
+  });
 }
