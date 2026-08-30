@@ -61,10 +61,19 @@ function rv(over: Partial<RecordValues> & { studentId: number }): RecordValues {
     reason: over.reason ?? null,
     operator: over.operator ?? null,
     note: over.note ?? null,
-    sessionId: null,
+    sessionId: over.sessionId ?? null,
     force: over.force ?? false,
     allowDuplicate: over.allowDuplicate ?? false,
   };
+}
+
+/** 读一条流水的 session_id。 */
+function sessionIdOf(recordId: number): number | null {
+  return (
+    getDb()
+      .prepare(`SELECT session_id AS s FROM attendance_records WHERE id = ?`)
+      .get(recordId) as { s: number | null }
+  ).s;
 }
 
 test('出勤扣 1：余额 2 → 1，流水写一行', () => {
@@ -189,4 +198,28 @@ test('listRecords：JOIN 出学员姓名/手机号，事务后返回值与库一
   assert.equal(mine?.className, '拉丁提高');
   assert.ok(mine?.studentName?.startsWith('学员'));
   assert.equal(mine?.lessonsDelta, -1);
+});
+
+/* ── 课程管理联动：createRecord / batchCreate 透传 session_id ── */
+
+test('createRecord 带 sessionId → 落库 session_id；不带 → NULL', () => {
+  const s = mkStudent(5);
+  const withS = createRecord(rv({ studentId: s, sessionId: 42, className: '带课节' }));
+  assert.equal(sessionIdOf(withS.id), 42);
+  const without = createRecord(rv({ studentId: s, className: '不带课节', attendDate: '2026-03-02' }));
+  assert.equal(sessionIdOf(without.id), null);
+});
+
+test('batchCreate：每条都带同一个 sessionId', () => {
+  const a = mkStudent(3);
+  const b = mkStudent(3);
+  const res = batchCreate([
+    rv({ studentId: a, sessionId: 77, className: '批量课节', attendDate: '2026-05-01' }),
+    rv({ studentId: b, sessionId: 77, className: '批量课节', attendDate: '2026-05-01' }),
+  ]);
+  assert.equal(res.succeeded, 2);
+  for (const row of res.rows) {
+    assert.ok(row.recordId);
+    assert.equal(sessionIdOf(row.recordId as number), 77);
+  }
 });

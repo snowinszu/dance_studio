@@ -975,8 +975,57 @@ const rosterState = {
   /** Map<studentId, { type, lessons }> */
   picks: new Map(),
   summary: null,
+  /** 「选择课节」关联的 class_sessions.id；null = 未关联，走学员库筛选 */
+  sessionId: null,
+  /** 当前日期下可选的课节（course.sessionsByDate） */
+  sessionOptions: [],
 };
 let rosterSearchDebounce = null;
+
+/** 拉某天的课节列表填「选择课节」下拉。course 模块未上线时静默失败即可。 */
+async function loadRosterSessions(date) {
+  if (!date || !shell.course || typeof shell.course.sessionsByDate !== 'function') {
+    rosterState.sessionOptions = [];
+    return;
+  }
+  try {
+    rosterState.sessionOptions = unwrap(await shell.course.sessionsByDate({ date }));
+  } catch {
+    rosterState.sessionOptions = [];
+  }
+}
+
+/** 选中一节课：带出公共字段 + 用该班在册花名册替换候选名单，默认全体「出勤」。 */
+async function applyRosterSession(opt) {
+  rosterState.sessionId = opt.id;
+  const setVal = (id, v) => {
+    const n = document.getElementById(id);
+    if (n) n.value = v ?? '';
+  };
+  setVal('r-time', opt.startTime);
+  setVal('r-class', opt.className);
+  setVal('r-teacher', opt.teacherName || '');
+
+  const roster = unwrap(await shell.course.rosterList(opt.classId));
+  rosterState.candidates = roster.map((m) => ({
+    id: m.studentId,
+    name: m.name,
+    phone: m.phone,
+    remainingLessons: m.remainingLessons,
+    cardExpireDate: m.cardExpireDate,
+    danceTypes: [],
+  }));
+  rosterState.picks = new Map(rosterState.candidates.map((c) => [c.id, { type: '出勤', lessons: 1 }]));
+  paintRosterList();
+}
+
+/** 取消课节关联，回到「按舞种 / 关键字从学员库筛」。 */
+async function clearRosterSession() {
+  rosterState.sessionId = null;
+  rosterState.picks.clear();
+  await rosterFetch({});
+  paintRosterList();
+}
 
 async function rosterFetch({ withOptions } = {}) {
   const list = unwrap(
@@ -1111,6 +1160,7 @@ async function submitRoster() {
     className: document.getElementById('r-class').value || null,
     teacher: document.getElementById('r-teacher').value || null,
     operator: document.getElementById('r-operator').value || null,
+    sessionId: rosterState.sessionId || undefined,
     entries,
   };
   try {
@@ -1133,11 +1183,54 @@ async function submitRoster() {
   }
 }
 
+/** 「选择课节」下拉的 <option> 列表：第一项为「不关联」，其余来自 rosterState.sessionOptions。 */
+function sessionOptionEls() {
+  return [
+    el('option', { value: '', text: '不关联课节（手动填这节课信息）' }),
+    ...rosterState.sessionOptions.map((s) =>
+      el('option', {
+        value: String(s.id),
+        text:
+          `${s.startTime}–${s.endTime} ${s.className}` +
+          (s.teacherName ? ` · ${s.teacherName}` : '') +
+          (s.status === '停课' ? ' · 已停课' : ''),
+        selected: rosterState.sessionId === s.id || undefined,
+        disabled: s.status === '停课' || undefined,
+      }),
+    ),
+  ];
+}
+
 function renderRosterInto(container) {
+  const sessionSel = el(
+    'select',
+    {
+      id: 'r-session',
+      style: 'width:100%;min-height:44px',
+      'aria-label': '选择课节',
+      onchange: async (e) => {
+        const id = Number(e.target.value);
+        if (!id) {
+          await clearRosterSession();
+          return;
+        }
+        const opt = rosterState.sessionOptions.find((s) => s.id === id);
+        if (opt) await applyRosterSession(opt);
+      },
+    },
+    ...sessionOptionEls(),
+  );
+
   const common = el(
     'div',
     { class: 'form-group' },
     el('div', { class: 'group-title', text: '这节课' }),
+    el(
+      'div',
+      { class: 'field' },
+      el('label', { for: 'r-session', text: '选择课节（从课程表带出日期 / 班级 / 老师 / 花名册）' }),
+      sessionSel,
+    ),
     el(
       'div',
       { class: 'field-grid' },
@@ -1145,7 +1238,16 @@ function renderRosterInto(container) {
         'div',
         { class: 'field' },
         el('label', { for: 'r-date', text: '日期' }),
-        el('input', { id: 'r-date', type: 'date', value: todayYmd() }),
+        el('input', {
+          id: 'r-date',
+          type: 'date',
+          value: todayYmd(),
+          onchange: async (e) => {
+            await loadRosterSessions(e.target.value);
+            const sel = document.getElementById('r-session');
+            if (sel) sel.replaceChildren(...sessionOptionEls());
+          },
+        }),
       ),
       el(
         'div',
@@ -1181,6 +1283,9 @@ function renderRosterInto(container) {
       'aria-label': '舞种',
       onchange: async (e) => {
         rosterState.danceType = e.target.value;
+        rosterState.sessionId = null; // 改用学员库筛选 → 脱离课节关联
+        const ss = document.getElementById('r-session');
+        if (ss) ss.value = '';
         await rosterFetch({});
         paintRosterList();
       },
@@ -1197,6 +1302,9 @@ function renderRosterInto(container) {
     value: rosterState.keyword,
     oninput: (e) => {
       rosterState.keyword = e.target.value;
+      rosterState.sessionId = null; // 改用学员库筛选 → 脱离课节关联
+      const ss = document.getElementById('r-session');
+      if (ss) ss.value = '';
       clearTimeout(rosterSearchDebounce);
       rosterSearchDebounce = setTimeout(async () => {
         await rosterFetch({});
@@ -1267,9 +1375,11 @@ async function renderRoster() {
   rosterState.summary = null;
   rosterState.danceType = '';
   rosterState.keyword = '';
+  rosterState.sessionId = null;
   view.replaceChildren(el('div', { class: 'empty', text: '加载中…' }));
   try {
     await rosterFetch({ withOptions: true });
+    await loadRosterSessions(todayYmd());
     renderRosterInto(view);
   } catch (err) {
     toast(err.message);
