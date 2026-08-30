@@ -887,18 +887,339 @@ function openScheduleForm(classId, existing) {
   });
 }
 
-/* ═════════════════════════ 占位视图（#52 替换） ═════════════════════════ */
+/* ═════════════════════════ #/teacher-plan（老师向上课时间计划表 · 月视图） ═════════════════════════ */
 
-function renderTeacherPlanPlaceholder() {
+const now0 = new Date();
+const planState = { teacherId: '', year: now0.getFullYear(), month: now0.getMonth() + 1 };
+
+function monthShift(delta) {
+  let y = planState.year;
+  let m = planState.month + delta;
+  if (m < 1) {
+    m = 12;
+    y -= 1;
+  } else if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  planState.year = y;
+  planState.month = m;
+  renderTeacherPlan();
+}
+
+async function renderTeacherPlan() {
   renderTabs('#/teacher-plan');
-  view.replaceChildren(
-    el(
-      'div',
-      { class: 'empty' },
-      el('strong', { text: '上课时间计划表' }),
-      '老师按月的排课视图将在后续版本接入。',
+  view.replaceChildren(el('div', { class: 'empty', text: '加载中…' }));
+  teacherCache = unwrap(await shell.course.teacherList({ includeInactive: true }));
+
+  const { year, month } = planState;
+  const sessions = unwrap(
+    await shell.course.sessionsByMonth({
+      teacherId: planState.teacherId ? Number(planState.teacherId) : undefined,
+      year,
+      month,
+    }),
+  );
+
+  const teacherSel = el(
+    'select',
+    { class: 'toolbar-select', onchange: (e) => ((planState.teacherId = e.target.value), renderTeacherPlan()) },
+    el('option', { value: '', text: '全部老师' }),
+    ...teacherCache.map((t) =>
+      el('option', {
+        value: String(t.id),
+        text: t.name + (t.status === '离职' ? '（离职）' : ''),
+        selected: String(t.id) === planState.teacherId || undefined,
+      }),
     ),
   );
+
+  const head = el(
+    'div',
+    { class: 'page-head' },
+    el(
+      'div',
+      {},
+      el('h1', { class: 'page-title', text: '上课时间计划表' }),
+      el('p', { class: 'page-sub', text: '按月查看排课 · 可逐日停课 / 改时间 / 换代课 / 加课' }),
+    ),
+    el('button', { class: 'btn btn-primary', onclick: () => openSessionForm() }, '＋ 手动加课'),
+  );
+
+  const bar = el(
+    'div',
+    { class: 'toolbar' },
+    teacherSel,
+    el('button', { class: 'btn btn-sm', onclick: () => monthShift(-1) }, '‹ 上月'),
+    el('span', { class: 'toolbar-label', text: `${year} 年 ${month} 月` }),
+    el('button', { class: 'btn btn-sm', onclick: () => monthShift(1) }, '下月 ›'),
+    el('span', { class: 'result-count', text: `共 ${sessions.length} 节` }),
+  );
+
+  if (sessions.length === 0) {
+    view.replaceChildren(
+      head,
+      bar,
+      el(
+        'div',
+        { class: 'empty' },
+        el('strong', { text: '本月暂无排课' }),
+        '换个月份，或点右上角「手动加课」。周期规则会在打开时自动铺到当月。',
+      ),
+    );
+    return;
+  }
+
+  const byDate = {};
+  for (const s of sessions) (byDate[s.sessionDate] ||= []).push(s);
+
+  // 桌面月历
+  const firstDow = new Date(year, month - 1, 1).getDay();
+  const lastDay = new Date(year, month, 0).getDate();
+  const todayYmdStr = todayYmd();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(el('div', { class: 'cal-cell blank' }));
+  for (let d = 1; d <= lastDay; d++) {
+    const ds = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    cells.push(
+      el(
+        'div',
+        { class: 'cal-cell' + (ds === todayYmdStr ? ' today' : '') },
+        el('div', { class: 'c-date', text: String(d) }),
+        ...(byDate[ds] || []).map((s) => calItem(s)),
+      ),
+    );
+  }
+  const grid = el(
+    'div',
+    { class: 'cal-grid' },
+    ...WEEKDAY_LABELS.map((w) => el('div', { class: 'cal-head', text: w })),
+    ...cells,
+  );
+
+  // 移动端：有课日期的竖列表
+  const list = el(
+    'div',
+    { class: 'day-list' },
+    ...Object.keys(byDate)
+      .sort()
+      .map((ds) =>
+        el(
+          'div',
+          { class: 'day-block' + (ds === todayYmdStr ? ' today' : '') },
+          el('div', { class: 'db-head', text: `${ds}（${WEEKDAY_LABELS[new Date(ds + 'T00:00:00').getDay()]}）` }),
+          ...byDate[ds].map((s) => calItem(s)),
+        ),
+      ),
+  );
+
+  view.replaceChildren(head, bar, grid, list);
+}
+
+function calItem(s) {
+  return el(
+    'button',
+    { class: 'cal-item' + (s.status === '停课' ? ' stopped' : ''), onclick: () => openSessionMenu(s) },
+    el('span', { class: 'i-time', text: `${s.startTime}–${s.endTime} ` }),
+    s.className,
+  );
+}
+
+function openSessionMenu(s) {
+  const banner = el('div', {});
+  const actionBtn = (label, fn) => el('button', { class: 'btn btn-sm', onclick: fn }, label);
+
+  const doUpdate = async (payload, okMsg) => {
+    banner.replaceChildren();
+    try {
+      const res = unwrap(await shell.course.sessionUpdate({ id: s.id, ...payload }));
+      if (res.conflicts && res.conflicts.length) {
+        banner.replaceChildren(conflictBanner(res.conflicts));
+        toast('已保存（有冲突提示）');
+      } else {
+        closeOverlays();
+        toast(okMsg);
+      }
+      renderTeacherPlan();
+    } catch (e) {
+      if (e.code === 'INVALID_TIME_RANGE') banner.replaceChildren(conflictLine(e.message));
+      else toast(e.message);
+    }
+  };
+
+  const rows = [
+    el(
+      'p',
+      {},
+      `${s.className} · ${s.sessionDate} ${s.startTime}–${s.endTime}` +
+        (s.teacherName ? ` · ${s.teacherName}` : '') +
+        (s.status === '停课' ? ' · 已停课' : '') +
+        (s.origin === '手动' ? ' · 手动加课' : ''),
+    ),
+    banner,
+    el(
+      'div',
+      { class: 'form-actions', style: 'justify-content:flex-start;flex-wrap:wrap' },
+      s.status === '停课'
+        ? actionBtn('恢复', () => doUpdate({ action: '恢复' }, '已恢复'))
+        : actionBtn('停课', () => doUpdate({ action: '停课' }, '已停课')),
+      actionBtn('改时间', () => openTimeEditor(s, doUpdate)),
+      actionBtn('换代课老师', () => openTeacherPicker(s, doUpdate)),
+      actionBtn('查看花名册', () => openSessionRoster(s)),
+      el(
+        'button',
+        {
+          class: 'btn btn-sm btn-danger',
+          onclick: async () => {
+            if (!confirm('删除这节课？考勤记录不受影响。')) return;
+            try {
+              unwrap(await shell.course.sessionDelete(s.id));
+              closeOverlays();
+              toast('已删除');
+              renderTeacherPlan();
+            } catch (e) {
+              toast(e.message);
+            }
+          },
+        },
+        '删除',
+      ),
+    ),
+  ];
+  openModal('课节操作', rows);
+}
+
+function conflictLine(text) {
+  return el('div', { class: 'warn-banner' }, el('span', { class: 'dot' }), text);
+}
+function conflictBanner(conflicts) {
+  return conflictLine(
+    `与 ${conflicts.map((c) => `${c.label}（${c.kind}冲突 ${c.startTime}–${c.endTime}）`).join('、')} 时段重叠`,
+  );
+}
+
+function openTimeEditor(s, doUpdate) {
+  const sF = field('开始', { type: 'time', value: s.startTime });
+  const eF = field('结束', { type: 'time', value: s.endTime });
+  const go = el('button', { class: 'btn btn-primary' }, '保存');
+  openModal('改时间（限当天）', [el('div', { class: 'field-grid' }, sF.wrap, eF.wrap)], [go]);
+  go.addEventListener('click', () =>
+    doUpdate({ action: '改时间', startTime: sF.input.value, endTime: eF.input.value }, '时间已更新'),
+  );
+}
+
+function openTeacherPicker(s, doUpdate) {
+  const sel = field('代课老师', {
+    type: 'select',
+    value: s.teacherId != null ? String(s.teacherId) : '',
+    options: [
+      { value: '', label: '（不指派）' },
+      ...teacherCache.map((t) => ({ value: String(t.id), label: t.name })),
+    ],
+  });
+  const go = el('button', { class: 'btn btn-primary' }, '保存');
+  openModal('换代课老师', [sel.wrap], [go]);
+  go.addEventListener('click', () =>
+    doUpdate({ action: '换老师', teacherId: sel.input.value ? Number(sel.input.value) : null }, '已换老师'),
+  );
+}
+
+async function openSessionRoster(s) {
+  const wrap = el('div', { class: 'roster-list' }, el('div', { class: 'field-hint', text: '加载中…' }));
+  openModal(`${s.className} · 花名册`, [wrap]);
+  try {
+    const roster = unwrap(await shell.course.rosterList(s.classId));
+    wrap.replaceChildren(
+      ...(roster.length
+        ? roster.map((m) =>
+            el(
+              'div',
+              { class: 'roster-item' },
+              el(
+                'div',
+                { class: 'r-main' },
+                el('div', { class: 'r-name', text: m.name }),
+                el('div', { class: 'r-sub', text: `${m.phone} · 剩 ${m.remainingLessons ?? 0} 节` }),
+              ),
+            ),
+          )
+        : [el('div', { class: 'field-hint', text: '这个班还没有学员。' })]),
+    );
+  } catch (e) {
+    wrap.replaceChildren(el('div', { class: 'field-hint', text: e.message }));
+  }
+}
+
+async function openSessionForm() {
+  const classes = unwrap(await shell.course.classList({ status: '在读' }));
+  if (classes.length === 0) {
+    toast('先在「班级」里建一个在读班');
+    return;
+  }
+  const f = {};
+  f.classId = field('班级', {
+    type: 'select',
+    options: classes.map((c) => ({ value: String(c.id), label: `${c.name}（${c.danceType}）` })),
+  });
+  f.sessionDate = field('日期', {
+    type: 'date',
+    value: `${planState.year}-${String(planState.month).padStart(2, '0')}-01`,
+  });
+  f.startTime = field('开始', { type: 'time', value: '19:00' });
+  f.endTime = field('结束', { type: 'time', value: '20:00' });
+  f.teacherId = field('老师', {
+    type: 'select',
+    options: [
+      { value: '', label: '（跟随班主教）' },
+      ...teacherCache.filter((t) => t.status === '在职').map((t) => ({ value: String(t.id), label: t.name })),
+    ],
+  });
+  f.note = field('备注', { value: '' });
+  const fieldMap = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.wrap]));
+  const banner = el('div', {});
+  const go = el('button', { class: 'btn btn-primary' }, '加课');
+  const { close } = openModal('手动加课', [
+    f.classId.wrap,
+    el('div', { class: 'field-grid' }, f.sessionDate.wrap, f.startTime.wrap, f.endTime.wrap, f.teacherId.wrap),
+    f.note.wrap,
+    banner,
+  ], [el('button', { class: 'btn', onclick: () => close() }, '取消'), go]);
+
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    banner.replaceChildren();
+    try {
+      const res = unwrap(
+        await shell.course.sessionCreate({
+          classId: Number(f.classId.input.value),
+          sessionDate: f.sessionDate.input.value,
+          startTime: f.startTime.input.value,
+          endTime: f.endTime.input.value,
+          teacherId: f.teacherId.input.value ? Number(f.teacherId.input.value) : null,
+          note: f.note.input.value.trim() || null,
+        }),
+      );
+      if (res.conflicts && res.conflicts.length) {
+        banner.replaceChildren(conflictBanner(res.conflicts));
+        go.textContent = '知道了';
+        go.disabled = false;
+        go.onclick = () => {
+          close();
+          renderTeacherPlan();
+        };
+        return;
+      }
+      close();
+      toast('已加课');
+      renderTeacherPlan();
+    } catch (e) {
+      go.disabled = false;
+      if (e.code === 'VALIDATION_FAILED') paintErrors(fieldMap, e.fields);
+      else if (e.code === 'INVALID_TIME_RANGE') paintErrors(fieldMap, { endTime: e.message });
+      else if (e.code === 'DUPLICATE_SESSION') banner.replaceChildren(conflictLine('该班这个时间已有一节课'));
+      else toast(e.message);
+    }
+  });
 }
 
 /* ───────────────────────── 路由 ───────────────────────── */
@@ -916,7 +1237,7 @@ function route() {
 
   if (hash.startsWith('#/teachers')) run(renderTeachers);
   else if (hash.startsWith('#/timetable')) run(renderTimetable);
-  else if (hash.startsWith('#/teacher-plan')) run(renderTeacherPlanPlaceholder);
+  else if (hash.startsWith('#/teacher-plan')) run(renderTeacherPlan);
   else run(renderClasses);
 }
 
