@@ -83,6 +83,7 @@ const CH = {
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',
   reportsOverview: 'reports:overview',
+  reportsAlerts: 'reports:alerts',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -187,6 +188,7 @@ const api = {
   // 数据报表：纯只读聚合。频道随各指标区 issue 逐个接入。
   reports: {
     overview: (range: { from: string; to: string }) => invoke(CH.reportsOverview, range),
+    alerts: () => invoke(CH.reportsAlerts),
   },
 };
 

@@ -38,6 +38,7 @@ import type {
   ListQuery,
   ListResult,
   QuickCheckInInput,
+  ReportAlerts,
   ReportOverview,
   ReportRange,
   RosterCandidate,
@@ -204,6 +205,7 @@ declare global {
     /** 数据报表：纯只读聚合。各接口随指标区 issue 接入。 */
     reports: {
       overview(range: ReportRange): Promise<IpcResult<ReportOverview>>;
+      alerts(): Promise<IpcResult<ReportAlerts>>;
     };
   }
 

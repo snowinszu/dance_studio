@@ -610,4 +610,6 @@ export function registerIpc(): void {
   handle(CH.reportsOverview, (q?: { from?: string; to?: string }) =>
     reportsRepo.getOverview(checkedRange(q)),
   );
+
+  handle(CH.reportsAlerts, () => reportsRepo.getAlerts());
 }

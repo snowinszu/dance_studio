@@ -195,6 +195,60 @@ function kpiCard(label, value, warn) {
   );
 }
 
+/* ───────────────────────── 预警中心 ───────────────────────── */
+
+/** 一组预警：标题 + 计数徽标 + 明细清单（每组最多渲染 50 行，超出给「还有 N 条」）。 */
+function alertGroup(title, items, renderRow) {
+  const n = items.length;
+  const shown = items.slice(0, 50);
+  const rows =
+    n === 0
+      ? [el('li', { class: 'a-none' }, '暂无')]
+      : shown.map((it) => el('li', {}, renderRow(it)));
+  if (n > shown.length) {
+    rows.push(el('li', { class: 'a-more' }, `……还有 ${n - shown.length} 条`));
+  }
+  return el(
+    'div',
+    { class: 'alert-group' },
+    el(
+      'div',
+      { class: 'alert-group-head' },
+      el('span', {}, title),
+      el('span', { class: 'alert-count' + (n === 0 ? ' is-zero' : '') }, String(n)),
+    ),
+    el('ul', { class: 'alert-list' }, ...rows),
+  );
+}
+
+function renderAlerts(alerts) {
+  const grid = el(
+    'div',
+    { class: 'alert-grid' },
+    alertGroup(
+      '低库存',
+      alerts.lowStock,
+      (it) => `${it.name} · 剩 ${it.quantity}（阈值 ${it.threshold}）`,
+    ),
+    alertGroup(
+      '课时余额不足',
+      alerts.lowBalance,
+      (it) => `${it.name} · 剩 ${it.remainingLessons} 课时`,
+    ),
+    alertGroup(
+      '沉睡学员（近 60 天无出勤）',
+      alerts.dormant,
+      (it) => `${it.name} · ${it.lastAttendDate ? '最近出勤 ' + it.lastAttendDate : '无出勤记录'}`,
+    ),
+    alertGroup(
+      '空课（近 30 天 0 到课）',
+      alerts.emptySessions,
+      (it) => `${it.className} · ${it.sessionDate} ${it.startTime}`,
+    ),
+  );
+  return section('预警中心', true, grid);
+}
+
 /* ───────────────────────── 概览 KPI 区 ───────────────────────── */
 
 function renderOverview(ov) {
@@ -257,14 +311,34 @@ async function load(body) {
   body.replaceChildren(el('div', { class: 'sec-empty' }, '加载中…'));
 
   const range = currentRange();
+  const sections = [];
+
+  // 预警中心（第一屏）——窗口固定，不跟随时间范围
+  try {
+    const alerts = unwrap(await shell.reports.alerts());
+    sections.push(renderAlerts(alerts));
+  } catch (e) {
+    sections.push(sectionError('预警中心', e));
+  }
+
+  // 概览 KPI——跟随时间范围
   try {
     const overview = unwrap(await shell.reports.overview(range));
-    body.replaceChildren(renderOverview(overview));
+    sections.push(renderOverview(overview));
   } catch (e) {
-    body.replaceChildren(
-      el('div', { class: 'empty' }, el('strong', {}, '数据读取失败'), e.message || '请稍后重试'),
-    );
+    sections.push(sectionError('概览', e));
   }
+
+  body.replaceChildren(...sections);
+}
+
+/** 某个数据区加载失败时的降级占位——不影响其它区。 */
+function sectionError(title, e) {
+  return section(
+    title,
+    true,
+    el('div', { class: 'empty' }, el('strong', {}, '这一区加载失败'), (e && e.message) || '请稍后重试'),
+  );
 }
 
 /* ───────────────────────── 路由 ───────────────────────── */

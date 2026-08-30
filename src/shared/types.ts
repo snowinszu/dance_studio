@@ -940,3 +940,17 @@ export interface ReportOverview {
   /** 当年（取 to 的年份）session_id 为空的出勤 / 补课条数——进不了「按班级」导出的提示值 */
   unlinkedCheckInsThisYear: number;
 }
+
+/**
+ * 预警中心的四组清单。窗口是固定常量（不跟随页面时间范围）；每组最多 200 行。
+ */
+export interface ReportAlerts {
+  /** 库存 <= 预警阈值的物件，最紧缺在前 */
+  lowStock: { id: number; name: string; quantity: number; threshold: number }[];
+  /** 在读且剩余课时 <= 3 的学员 */
+  lowBalance: { id: number; name: string; remainingLessons: number }[];
+  /** 在读、未软删，近 60 天无「出勤」记录；lastAttendDate 为历来最近一次出勤日期（可能无） */
+  dormant: { id: number; name: string; lastAttendDate: string | null }[];
+  /** 近 30 天内、已发生、正常、关联出勤/补课人次为 0 的课节 */
+  emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
+}
