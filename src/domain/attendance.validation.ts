@@ -10,6 +10,7 @@
  * 「调整」类型的 delta 由 LessonAdjustmentInput.delta 直接给（带符号），不经 deltaFor。
  */
 import type {
+  AttendanceCorrectionInput,
   AttendanceEventType,
   AttendanceType,
   BatchCheckInInput,
@@ -254,6 +255,73 @@ export function validateBatchCheckIn(input: BatchCheckInInput): {
     };
   });
 
+  return { values, errors };
+}
+
+/** 校验后的更正值。studentId 不可改，故不在其中。 */
+export interface CorrectionValues {
+  id: number;
+  type: AttendanceEventType;
+  attendDate: string;
+  attendTime: string | null;
+  className: string | null;
+  teacher: string | null;
+  lessonsDelta: number;
+  operator: string | null;
+  note: string | null;
+  force: boolean;
+}
+
+/** 更正一条考勤记录的入参校验。 */
+export function validateCorrection(input: AttendanceCorrectionInput): {
+  values: CorrectionValues;
+  errors: Record<string, string>;
+} {
+  const errors: Record<string, string> = {};
+
+  const id = Number(input.id);
+  if (!Number.isInteger(id) || id <= 0) errors['id'] = '记录无效';
+
+  const type = input.type;
+  if (!EVENT_TYPES.includes(type)) errors['type'] = '考勤类型不合法';
+
+  const date = resolveDate(input.attendDate);
+  if ('error' in date) errors['attendDate'] = date.error;
+
+  const time = resolveTime(input.attendTime);
+  if ('error' in time) errors['attendTime'] = time.error;
+
+  const cls = optionalText(input.className, MAX_CLASS_NAME, '课程名');
+  if ('error' in cls) errors['className'] = cls.error;
+
+  const teacher = optionalText(input.teacher, MAX_TEACHER, '老师');
+  if ('error' in teacher) errors['teacher'] = teacher.error;
+
+  const operator = optionalText(input.operator, MAX_OPERATOR, '经办人');
+  if ('error' in operator) errors['operator'] = operator.error;
+
+  const note = optionalText(input.note, MAX_NOTE, '备注');
+  if ('error' in note) errors['note'] = note.error;
+
+  let lessonsDelta = 0;
+  if (EVENT_TYPES.includes(type)) {
+    const d = deltaFor(type, input.lessons);
+    if ('error' in d) errors['lessons'] = d.error;
+    else lessonsDelta = d.delta;
+  }
+
+  const values: CorrectionValues = {
+    id,
+    type,
+    attendDate: 'value' in date ? date.value : todayYmd(),
+    attendTime: 'value' in time ? time.value : null,
+    className: 'value' in cls ? cls.value : null,
+    teacher: 'value' in teacher ? teacher.value : null,
+    lessonsDelta,
+    operator: 'value' in operator ? operator.value : null,
+    note: 'value' in note ? note.value : null,
+    force: Boolean(input.force),
+  };
   return { values, errors };
 }
 

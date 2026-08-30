@@ -22,7 +22,7 @@ import type {
   RosterCandidate,
   RosterCandidateQuery,
 } from '../shared/types';
-import type { RecordValues } from './attendance.validation';
+import type { CorrectionValues, RecordValues } from './attendance.validation';
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -152,6 +152,103 @@ export function createRecord(v: RecordValues): CheckInResult {
 
   const id = tx();
   return { id, remainingLessons: readBalance(v.studentId) };
+}
+
+/**
+ * 撤销一条考勤：软删该行 + 反向回补原 lessons_delta（同一事务）。
+ * 对已撤销的行幂等——不再二次回补，直接返回当前余额。
+ */
+export function voidRecord(id: number): { id: number; studentId: number; remainingLessons: number } {
+  const db = getDb();
+  const now = nowIso();
+
+  const studentId = db.transaction((): number => {
+    const row = db
+      .prepare(
+        `SELECT student_id AS studentId, lessons_delta AS lessonsDelta, deleted_at AS deletedAt
+           FROM attendance_records WHERE id = ?`,
+      )
+      .get(id) as
+      | { studentId: number; lessonsDelta: number; deletedAt: string | null }
+      | undefined;
+    if (!row) throw new AppError('ATTENDANCE_NOT_FOUND', '考勤记录不存在，可能已被撤销');
+    if (row.deletedAt != null) return row.studentId; // 幂等
+
+    db.prepare(
+      `UPDATE students
+          SET remaining_lessons = COALESCE(remaining_lessons, 0) - @delta, updated_at = @now
+        WHERE id = @sid`,
+    ).run({ delta: row.lessonsDelta, now, sid: row.studentId });
+    db.prepare(
+      `UPDATE attendance_records SET deleted_at = @now, updated_at = @now WHERE id = @id`,
+    ).run({ now, id });
+    return row.studentId;
+  })();
+
+  return { id, studentId, remainingLessons: readBalance(studentId) };
+}
+
+/**
+ * 更正一条考勤：按「新 lessons_delta − 旧 lessons_delta」差额调余额，并覆盖流水字段。
+ * - 只对未撤销、非「调整」的记录生效。
+ * - 不重跑重复检测（改错字 / 改日期不该被自己旧记录挡）。
+ * - 差额为负且会使余额低于 0：未 force 抛 INSUFFICIENT_LESSONS。
+ * - 不能改 student_id（换人 = 撤销后重打）。
+ */
+export function correctRecord(v: CorrectionValues): CheckInResult {
+  const db = getDb();
+  const now = nowIso();
+
+  const studentId = db.transaction((): number => {
+    const row = db
+      .prepare(
+        `SELECT student_id AS studentId, lessons_delta AS lessonsDelta, type
+           FROM attendance_records WHERE id = ? AND deleted_at IS NULL`,
+      )
+      .get(v.id) as { studentId: number; lessonsDelta: number; type: string } | undefined;
+    if (!row) throw new AppError('ATTENDANCE_NOT_FOUND', '考勤记录不存在，可能已被撤销');
+    if (row.type === '调整') {
+      throw new AppError('BAD_REQUEST', '调整记录不支持更正，请撤销后重建');
+    }
+
+    const diff = v.lessonsDelta - row.lessonsDelta;
+    if (diff < 0 && !v.force) {
+      const bal = db
+        .prepare(`SELECT COALESCE(remaining_lessons, 0) AS bal FROM students WHERE id = ?`)
+        .get(row.studentId) as { bal: number };
+      if (bal.bal + diff < 0) {
+        throw new AppError('INSUFFICIENT_LESSONS', '剩余课时不足', { lessons: '剩余课时不足' });
+      }
+    }
+    if (diff !== 0) {
+      db.prepare(
+        `UPDATE students
+            SET remaining_lessons = COALESCE(remaining_lessons, 0) + @diff, updated_at = @now
+          WHERE id = @sid`,
+      ).run({ diff, now, sid: row.studentId });
+    }
+    db.prepare(
+      `UPDATE attendance_records
+          SET type = @type, attend_date = @date, attend_time = @time, class_name = @cls,
+              teacher = @teacher, lessons_delta = @delta, operator = @operator,
+              note = @note, updated_at = @now
+        WHERE id = @id`,
+    ).run({
+      type: v.type,
+      date: v.attendDate,
+      time: v.attendTime,
+      cls: v.className,
+      teacher: v.teacher,
+      delta: v.lessonsDelta,
+      operator: v.operator,
+      note: v.note,
+      now,
+      id: v.id,
+    });
+    return row.studentId;
+  })();
+
+  return { id: v.id, remainingLessons: readBalance(studentId) };
 }
 
 /**

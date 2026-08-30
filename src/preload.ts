@@ -52,6 +52,8 @@ const CH = {
   attendanceQuickCheckIn: 'attendance:quickCheckIn',
   attendanceBatchCheckIn: 'attendance:batchCheckIn',
   attendanceRosterCandidates: 'attendance:rosterCandidates',
+  attendanceCorrect: 'attendance:correct',
+  attendanceVoid: 'attendance:void',
 } as const;
 
 /** 统一走 invoke：异步、可回传结构化结果（IpcResult 信封）。 */
@@ -118,6 +120,8 @@ const api = {
     quickCheckIn: (input: unknown) => invoke(CH.attendanceQuickCheckIn, input),
     batchCheckIn: (input: unknown) => invoke(CH.attendanceBatchCheckIn, input),
     rosterCandidates: (query?: unknown) => invoke(CH.attendanceRosterCandidates, query),
+    correct: (input: unknown) => invoke(CH.attendanceCorrect, input),
+    voidRecord: (id: number) => invoke(CH.attendanceVoid, id),
   },
 };
 

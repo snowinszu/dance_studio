@@ -118,6 +118,25 @@ function deltaCell(delta) {
 }
 
 function recordRow(r) {
+  const ops = el(
+    'td',
+    {},
+    el(
+      'div',
+      { class: 'row-ops' },
+      r.type !== '调整' &&
+        el('button', {
+          class: 'btn btn-sm',
+          text: '更正',
+          onclick: () => openCorrectModal(r),
+        }),
+      el('button', {
+        class: 'btn btn-sm',
+        text: '撤销',
+        onclick: () => voidRecordFlow(r),
+      }),
+    ),
+  );
   return el(
     'tr',
     { dataset: { id: String(r.id) } },
@@ -139,7 +158,119 @@ function recordRow(r) {
     el('td', {}, deltaCell(r.lessonsDelta)),
     el('td', { text: r.operator || '—' }),
     el('td', { class: 'cell-note', text: r.reason || r.note || '' }),
+    ops,
   );
+}
+
+async function voidRecordFlow(r) {
+  const ok = await confirmModal({
+    title: '撤销这条考勤',
+    body: `将撤销 ${r.studentName || '#' + r.studentId} 在 ${r.attendDate} 的「${r.type}」记录，并把课时按原样回补。`,
+    confirmLabel: '撤销',
+  });
+  if (!ok) return;
+  try {
+    unwrap(await shell.attendance.voidRecord(r.id));
+    toast('已撤销，课时已回补');
+    listState.offset = 0;
+    await reloadList();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+function openCorrectModal(r) {
+  const isAttendInit = r.type === '出勤';
+  const dateInput = el('input', { type: 'date', value: r.attendDate });
+  const timeInput = el('input', { type: 'time', value: r.attendTime || '' });
+  const classInput = el('input', { type: 'text', maxlength: '40', value: r.className || '' });
+  const teacherInput = el('input', { type: 'text', maxlength: '20', value: r.teacher || '' });
+  const operatorInput = el('input', { type: 'text', maxlength: '20', value: r.operator || '' });
+  const noteInput = el('input', { type: 'text', maxlength: '200', value: r.note || '' });
+  const lessonsInput = el('input', {
+    type: 'number',
+    min: '1',
+    step: '1',
+    value: String(isAttendInit ? Math.abs(r.lessonsDelta) || 1 : 1),
+    disabled: !isAttendInit || undefined,
+  });
+  const typeSel = el(
+    'select',
+    {
+      onchange: (e) => {
+        lessonsInput.disabled = e.target.value !== '出勤';
+        if (e.target.value !== '出勤') lessonsInput.value = '1';
+      },
+    },
+    ...EVENT_TYPES.map((t) => el('option', { value: t, text: t, selected: r.type === t || undefined })),
+  );
+
+  const field = (label, node) =>
+    el('div', { class: 'field' }, el('label', { text: label }), node);
+
+  const submit = async (force) => {
+    const type = typeSel.value;
+    const payload = {
+      id: r.id,
+      type,
+      attendDate: dateInput.value || undefined,
+      attendTime: timeInput.value || null,
+      className: classInput.value || null,
+      teacher: teacherInput.value || null,
+      lessons: type === '出勤' ? Number(lessonsInput.value) || 1 : undefined,
+      operator: operatorInput.value || null,
+      note: noteInput.value || null,
+      force,
+    };
+    try {
+      unwrap(await shell.attendance.correct(payload));
+      toast('已更正');
+      mask.remove();
+      listState.offset = 0;
+      await reloadList();
+    } catch (err) {
+      if (err.code === 'INSUFFICIENT_LESSONS' && !force) {
+        const ok = await confirmModal({
+          title: '课时会变负',
+          body: '这次更正会让该学员剩余课时低于 0。仍要保存吗？',
+          confirmLabel: '仍然保存',
+          danger: true,
+        });
+        if (ok) await submit(true);
+        return;
+      }
+      toast(err.message);
+    }
+  };
+
+  const mask = el(
+    'div',
+    { class: 'modal-mask', onclick: (e) => e.target === mask && mask.remove() },
+    el(
+      'div',
+      { class: 'modal', role: 'dialog', 'aria-modal': 'true' },
+      el('h3', { text: `更正 · ${r.studentName || '#' + r.studentId}` }),
+      el(
+        'div',
+        { class: 'field-grid' },
+        field('日期', dateInput),
+        field('时间', timeInput),
+        field('类型', typeSel),
+        field('扣课时数', lessonsInput),
+        field('课程名', classInput),
+        field('老师', teacherInput),
+        field('经办人', operatorInput),
+        field('备注', noteInput),
+      ),
+      el(
+        'div',
+        { class: 'form-actions' },
+        el('button', { class: 'btn', text: '取消', onclick: () => mask.remove() }),
+        el('button', { class: 'btn btn-primary', text: '保存更正', onclick: () => submit(false) }),
+      ),
+    ),
+  );
+  document.body.appendChild(mask);
 }
 
 function hasActiveFilter() {
@@ -253,8 +384,8 @@ function renderListInto(container) {
       el(
         'tr',
         {},
-        ...['日期', '时间', '学员', '课程', '老师', '类型', '课时增减', '经办人', '备注'].map((h) =>
-          el('th', { text: h }),
+        ...['日期', '时间', '学员', '课程', '老师', '类型', '课时增减', '经办人', '备注', '操作'].map(
+          (h) => el('th', { text: h }),
         ),
       ),
     ),

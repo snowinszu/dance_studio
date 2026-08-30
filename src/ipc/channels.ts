@@ -54,6 +54,8 @@ export const CH = {
   attendanceQuickCheckIn: 'attendance:quickCheckIn',
   attendanceBatchCheckIn: 'attendance:batchCheckIn',
   attendanceRosterCandidates: 'attendance:rosterCandidates',
+  attendanceCorrect: 'attendance:correct',
+  attendanceVoid: 'attendance:void',
 } as const;
 
 export type ChannelName = (typeof CH)[keyof typeof CH];

@@ -9,6 +9,7 @@ import { dialog, ipcMain } from 'electron';
 import type {
   AllocationInput,
   AllocationListQuery,
+  AttendanceCorrectionInput,
   AttendanceListQuery,
   BatchCheckInInput,
   CustomFieldInput,
@@ -22,7 +23,11 @@ import type {
   StudentInput,
 } from '../shared/types';
 import { validateAllocation, validateItem } from '../domain/inventory.validation';
-import { validateBatchCheckIn, validateQuickCheckIn } from '../domain/attendance.validation';
+import {
+  validateBatchCheckIn,
+  validateCorrection,
+  validateQuickCheckIn,
+} from '../domain/attendance.validation';
 import {
   buildItemTemplate,
   exportAllocations,
@@ -329,5 +334,20 @@ export function registerIpc(): void {
       throw new AppError('VALIDATION_FAILED', '请检查点名信息', errors);
     }
     return attendanceRepo.batchCreate(values);
+  });
+
+  handle(CH.attendanceCorrect, (input?: AttendanceCorrectionInput) => {
+    const { values, errors } = validateCorrection(
+      input ?? ({} as AttendanceCorrectionInput),
+    );
+    if (Object.keys(errors).length > 0) {
+      throw new AppError('VALIDATION_FAILED', '请检查表单填写', errors);
+    }
+    return attendanceRepo.correctRecord(values);
+  });
+
+  handle(CH.attendanceVoid, (id?: number) => {
+    if (!Number.isFinite(Number(id))) throw new AppError('BAD_REQUEST', '缺少记录 id');
+    return attendanceRepo.voidRecord(Number(id));
   });
 }

@@ -8,6 +8,7 @@ import type {
   AllocationInput,
   AllocationListQuery,
   AllocationListResult,
+  AttendanceCorrectionInput,
   AttendanceListQuery,
   AttendanceListResult,
   BatchCheckInInput,
@@ -116,6 +117,10 @@ declare global {
       rosterCandidates(
         query?: RosterCandidateQuery,
       ): Promise<IpcResult<RosterCandidate[]>>;
+      correct(input: AttendanceCorrectionInput): Promise<IpcResult<CheckInResult>>;
+      voidRecord(
+        id: number,
+      ): Promise<IpcResult<{ id: number; studentId: number; remainingLessons: number }>>;
     };
   }
 
