@@ -16,6 +16,7 @@ import type {
   ReportAlerts,
   ReportAttendanceStats,
   ReportCourseStats,
+  ReportInventoryStats,
   ReportOverview,
   ReportRange,
   ReportStudentStats,
@@ -562,4 +563,93 @@ export function getStudentStats(range: ReportRange): ReportStudentStats {
     lowBalance: queryLowBalance(),
     dormant: queryDormant(),
   };
+}
+
+/* ───────────────────────── 库存指标 ───────────────────────── */
+
+/** 「呆滞物料」判定窗口：物件在库 > 0 且近 N 天无任何领用即算呆滞。 */
+const STALE_DAYS = 90;
+
+/**
+ * 库存补货预警、领用趋势、TOP 与呆滞物料。
+ *
+ * - lowStock            库存 <= 阈值的物件（同预警中心口径），最紧缺在前
+ * - totals              未软删物件的品类数与件数合计
+ * - monthlyAllocations  按 claimed_at 自然月分组的领用件数，repo 补齐区间内每个月
+ * - topItems/topStudents 区间内按物件 / 按学员分组的领用件数前 10
+ * - staleItems          未软删、在库 > 0、近 STALE_DAYS 天无领用；带历来最近领用日期
+ */
+export function getInventoryStats(range: ReportRange): ReportInventoryStats {
+  const db = getDb();
+  const { from, to } = range;
+  const cutoffStale = daysAgoLocal(STALE_DAYS);
+
+  const lowStock = db
+    .prepare(
+      `SELECT id, name, quantity, low_stock_threshold AS threshold
+         FROM inventory_items
+        WHERE deleted_at IS NULL AND quantity <= low_stock_threshold
+        ORDER BY (quantity - low_stock_threshold) ASC, name COLLATE NOCASE
+        LIMIT ${ALERT_LIMIT}`,
+    )
+    .all() as ReportInventoryStats['lowStock'];
+
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS itemKinds, COALESCE(SUM(quantity), 0) AS totalQuantity
+         FROM inventory_items WHERE deleted_at IS NULL`,
+    )
+    .get() as ReportInventoryStats['totals'];
+
+  const allocRows = db
+    .prepare(
+      `SELECT substr(claimed_at, 1, 7) AS ym, COALESCE(SUM(quantity), 0) AS q
+         FROM item_allocations
+        WHERE claimed_at BETWEEN @from AND @to
+        GROUP BY ym`,
+    )
+    .all({ from, to }) as { ym: string; q: number }[];
+  const allocMap = new Map(allocRows.map((r) => [r.ym, r.q]));
+  const monthlyAllocations = monthsBetween(from, to).map((month) => ({
+    month,
+    quantity: allocMap.get(month) ?? 0,
+  }));
+
+  const topItems = db
+    .prepare(
+      `SELECT a.item_id AS itemId, i.name AS name, SUM(a.quantity) AS quantity
+         FROM item_allocations a JOIN inventory_items i ON i.id = a.item_id
+        WHERE a.claimed_at BETWEEN @from AND @to
+        GROUP BY a.item_id
+        ORDER BY quantity DESC, i.name COLLATE NOCASE
+        LIMIT ${TOP_LIMIT}`,
+    )
+    .all({ from, to }) as ReportInventoryStats['topItems'];
+
+  const topStudents = db
+    .prepare(
+      `SELECT a.student_id AS studentId, s.name AS name, SUM(a.quantity) AS quantity
+         FROM item_allocations a JOIN students s ON s.id = a.student_id
+        WHERE a.claimed_at BETWEEN @from AND @to
+        GROUP BY a.student_id
+        ORDER BY quantity DESC, s.name COLLATE NOCASE
+        LIMIT ${TOP_LIMIT}`,
+    )
+    .all({ from, to }) as ReportInventoryStats['topStudents'];
+
+  const staleItems = db
+    .prepare(
+      `SELECT i.id, i.name, i.quantity,
+              (SELECT MAX(a.claimed_at) FROM item_allocations a WHERE a.item_id = i.id) AS lastClaimedAt
+         FROM inventory_items i
+        WHERE i.deleted_at IS NULL AND i.quantity > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM item_allocations a
+             WHERE a.item_id = i.id AND a.claimed_at >= @cutoffStale)
+        ORDER BY (lastClaimedAt IS NULL) DESC, lastClaimedAt ASC, i.name COLLATE NOCASE
+        LIMIT ${ALERT_LIMIT}`,
+    )
+    .all({ cutoffStale }) as ReportInventoryStats['staleItems'];
+
+  return { lowStock, totals, monthlyAllocations, topItems, topStudents, staleItems };
 }

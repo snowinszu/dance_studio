@@ -1026,3 +1026,19 @@ export interface ReportStudentStats {
   /** 在读、未软删，近 60 天无「出勤」（与预警中心同口径） */
   dormant: { id: number; name: string; lastAttendDate: string | null }[];
 }
+
+/** 库存指标区。 */
+export interface ReportInventoryStats {
+  /** 库存 <= 阈值的物件（同预警中心口径），最紧缺在前 */
+  lowStock: { id: number; name: string; quantity: number; threshold: number }[];
+  /** 未软删物件的品类数与件数合计 */
+  totals: { itemKinds: number; totalQuantity: number };
+  /** 按 claimed_at 自然月分组的领用件数，'YYYY-MM' 升序，repo 已补齐每个月（缺月为 0） */
+  monthlyAllocations: { month: string; quantity: number }[];
+  /** 区间内按物件分组的领用件数前 10 */
+  topItems: { itemId: number; name: string; quantity: number }[];
+  /** 区间内按学员分组的领用件数前 10 */
+  topStudents: { studentId: number; name: string; quantity: number }[];
+  /** 未软删、在库 > 0、近 90 天无领用；lastClaimedAt 为历来最近一次领用日期（可能无） */
+  staleItems: { id: number; name: string; quantity: number; lastClaimedAt: string | null }[];
+}

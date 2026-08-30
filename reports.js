@@ -590,6 +590,77 @@ function renderStudent(stats) {
   );
 }
 
+/* ───────────────────────── 库存指标区 ───────────────────────── */
+
+function renderInventory(stats) {
+  return section(
+    '库存指标',
+    true,
+
+    subHead('库存合计'),
+    el(
+      'div',
+      { class: 'stat-pair' },
+      el(
+        'div',
+        { class: 'stat' },
+        el('b', {}, String(stats.totals.itemKinds)),
+        el('span', {}, '物件品类'),
+      ),
+      el(
+        'div',
+        { class: 'stat' },
+        el('b', {}, String(stats.totals.totalQuantity)),
+        el('span', {}, '在库件数'),
+      ),
+    ),
+
+    subHead('低库存预警'),
+    twoColTable(
+      '物件',
+      '库存 / 阈值',
+      stats.lowStock.map((r) => [r.name, `${r.quantity} / ${r.threshold}`]),
+    ),
+
+    subHead('月度领用件数'),
+    el('div', {
+      class: 'chart',
+      html: lineChartSVG({
+        points: stats.monthlyAllocations.map((m) => ({ label: m.month, value: m.quantity })),
+        width: 600,
+        height: 160,
+        title: '月度领用件数趋势',
+      }),
+    }),
+    el(
+      'div',
+      { class: 'chart-xlabels' },
+      ...stats.monthlyAllocations.map((m) => el('span', {}, `${m.month.slice(2)}·${m.quantity}`)),
+    ),
+
+    subHead('领用 TOP 物件'),
+    twoColTable(
+      '物件',
+      '领用件数',
+      stats.topItems.map((r) => [r.name, r.quantity]),
+    ),
+
+    subHead('领用 TOP 学员'),
+    twoColTable(
+      '学员',
+      '领用件数',
+      stats.topStudents.map((r) => [r.name, r.quantity]),
+    ),
+
+    subHead('呆滞物料（90 天无领用）'),
+    twoColTable(
+      '物件',
+      '最近领用',
+      stats.staleItems.map((r) => [`${r.name}（在库 ${r.quantity}）`, r.lastClaimedAt || '从未领用']),
+    ),
+  );
+}
+
 /* ───────────────────────── 页面骨架 ───────────────────────── */
 
 /**
@@ -676,6 +747,14 @@ async function load(body) {
     sections.push(renderStudent(student));
   } catch (e) {
     sections.push(sectionError('学员指标', e));
+  }
+
+  // 库存指标区
+  try {
+    const inv = unwrap(await shell.reports.inventoryStats(range));
+    sections.push(renderInventory(inv));
+  } catch (e) {
+    sections.push(sectionError('库存指标', e));
   }
 
   body.replaceChildren(...sections);

@@ -624,4 +624,8 @@ export function registerIpc(): void {
   handle(CH.reportsStudentStats, (q?: { from?: string; to?: string }) =>
     reportsRepo.getStudentStats(checkedRange(q)),
   );
+
+  handle(CH.reportsInventoryStats, (q?: { from?: string; to?: string }) =>
+    reportsRepo.getInventoryStats(checkedRange(q)),
+  );
 }
