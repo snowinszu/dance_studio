@@ -282,23 +282,23 @@
   <section class="stats-bar" data-od-id="stats-bar" aria-label="今日概况">
     <div class="stat-chip" data-od-id="stat-students">
       <div class="stat-label">在籍学员</div>
-      <div class="stat-value">248 <span class="unit stat-accent">人</span></div>
-      <div class="stat-sub">较上月 +12 人</div>
+      <div class="stat-value"><span class="stat-num">—</span> <span class="unit stat-accent">人</span></div>
+      <div class="stat-sub">—</div>
     </div>
     <div class="stat-chip" data-od-id="stat-attendance">
       <div class="stat-label">今日出勤</div>
-      <div class="stat-value">36 <span class="unit stat-accent">人</span></div>
-      <div class="stat-sub">出勤率 92%</div>
+      <div class="stat-value"><span class="stat-num">—</span> <span class="unit stat-accent">人</span></div>
+      <div class="stat-sub">—</div>
     </div>
     <div class="stat-chip" data-od-id="stat-classes">
       <div class="stat-label">今日课程</div>
-      <div class="stat-value">8 <span class="unit stat-accent">节</span></div>
-      <div class="stat-sub">3 间教室使用中</div>
+      <div class="stat-value"><span class="stat-num">—</span> <span class="unit stat-accent">节</span></div>
+      <div class="stat-sub">—</div>
     </div>
-    <div class="stat-chip" data-od-id="stat-revenue">
-      <div class="stat-label">本月收入</div>
-      <div class="stat-value">¥<span>5.2</span><span class="unit stat-accent">万</span></div>
-      <div class="stat-sub">较上月 +8.3%</div>
+    <div class="stat-chip" data-od-id="stat-inventory">
+      <div class="stat-label">库存状态</div>
+      <div class="stat-value"><span class="stat-num">—</span> <span class="unit stat-accent">件</span></div>
+      <div class="stat-sub">—</div>
     </div>
   </section>
 
@@ -450,6 +450,58 @@
     updateAll();
     setInterval(updateAll, 60000);
   }, msToNext);
+
+  /* ── 今日概况四张卡：向主进程要真实数据 ──────────────────────────
+     数据来自数据报表模块的只读聚合 reports:homeSummary。首页只读、不缓存，
+     进页面拉一次，从别的模块切回来（window focus）再拉一次。               */
+
+  /** 填一张卡：主数值 + 副标题（subWarn=true 时副标题转暖红）。 */
+  function setChip(odId, num, sub, subWarn) {
+    var chip = document.querySelector('[data-od-id="' + odId + '"]');
+    if (!chip) return;
+    var numEl = chip.querySelector('.stat-num');
+    var subEl = chip.querySelector('.stat-sub');
+    if (numEl) numEl.textContent = num;
+    if (subEl) {
+      subEl.textContent = sub;
+      subEl.style.color = subWarn ? 'var(--cc-1)' : '';
+    }
+  }
+
+  /** studioShell 不可用 / IPC 失败时的兜底：四张卡回落占位符。 */
+  function homeSummaryFallback() {
+    setChip('stat-students', '—', '—');
+    setChip('stat-attendance', '—', '—');
+    setChip('stat-classes', '—', '—');
+    setChip('stat-inventory', '—', '—');
+  }
+
+  function loadHomeSummary() {
+    var shell = window.studioShell;
+    if (!shell || !shell.reports || typeof shell.reports.homeSummary !== 'function') {
+      homeSummaryFallback();
+      return;
+    }
+    shell.reports.homeSummary().then(function(res) {
+      if (!res || !res.ok || !res.data) { homeSummaryFallback(); return; }
+      var d = res.data;
+      var rateSub = d.todayAttendanceRate == null
+        ? '暂无排课'
+        : '出勤率 ' + Math.round(d.todayAttendanceRate * 100) + '%';
+      var invSub = d.lowStockCount > 0
+        ? '共 ' + d.itemKinds + ' 品类 · ' + d.lowStockCount + ' 项偏低'
+        : '共 ' + d.itemKinds + ' 品类 · 库存充足';
+      setChip('stat-students', String(d.activeStudents), '近 30 天新增 ' + d.newStudentsLast30d + ' 人');
+      setChip('stat-attendance', String(d.todayCheckIns), rateSub);
+      setChip('stat-classes', String(d.todaySessions), d.todayRoomsInUse + ' 间教室使用中');
+      setChip('stat-inventory', String(d.totalQuantity), invSub, d.lowStockCount > 0);
+    }).catch(function() {
+      homeSummaryFallback();
+    });
+  }
+
+  loadHomeSummary();
+  window.addEventListener('focus', loadHomeSummary);
 </script>
 
 </body>
