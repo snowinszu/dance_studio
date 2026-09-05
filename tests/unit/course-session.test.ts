@@ -162,6 +162,15 @@ test('sessionsByDate：返回当天实例 + 在册人数；含停课实例（带
   assert.equal(rows2[0]?.status, '停课', '停课实例仍返回、带标记');
 });
 
+test('sessionsByDate：未调用 generateMonth 也能读带写补齐当日实例（批量点名下拉框场景）', () => {
+  const c = mkClass({ name: '未展开班', danceType: '未展开舞' });
+  mkSched({ classId: c.id, weekday: 3, startTime: '19:00', endTime: '20:00' });
+  // 刻意不调用 generateMonth：模拟用户只在课程表新建了排课规则、从未打开过月视图
+  const rows = repo.sessionsByDate('2026-09-02').filter((x) => x.classId === c.id);
+  assert.equal(rows.length, 1, 'sessionsByDate 应自行补齐当月实例，而不是依赖调用方先跑 generateMonth');
+  assert.equal(rows[0]?.className, '未展开班');
+});
+
 test('改周期规则不追溯已生成实例', () => {
   const c = mkClass({ name: '不追溯班', danceType: '不追溯舞' });
   const s = mkSched({ classId: c.id, weekday: 3, startTime: '19:00', endTime: '20:00' });

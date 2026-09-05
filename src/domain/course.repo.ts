@@ -724,8 +724,14 @@ export function sessionsByMonth(query: {
     .all(params) as ClassSessionListItem[];
 }
 
-/** 某一天的排课实例（供考勤「选择课节」用）。含停课实例（带标记，渲染层置灰）。 */
+/**
+ * 某一天的排课实例（供考勤「选择课节」用，读带写）。含停课实例（带标记，渲染层置灰）。
+ * 与 sessionsByMonth 一致，先按 date 所在月份 generateMonth 补齐，避免用户新建排课后
+ * 未打开过课程表月视图、class_sessions 尚未物化导致下拉框查不到课节。
+ */
 export function sessionsByDate(date: string): SessionDateItem[] {
+  const [yStr, mStr] = date.split('-');
+  generateMonth(Number(yStr), Number(mStr));
   return getDb()
     .prepare(
       `SELECT se.id, se.class_id AS classId, c.name AS className,
