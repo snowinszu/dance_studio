@@ -5,6 +5,9 @@
  * 两边引用同一份常量，避免字符串手抖对不上。命名统一 `域:动作`。
  */
 export const CH = {
+  // 应用信息
+  appVersion: 'app:version',
+
   // 学员档案
   studentsList: 'students:list',
   studentsGet: 'students:get',

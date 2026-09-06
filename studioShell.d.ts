@@ -71,6 +71,9 @@ declare global {
     /** 历史遗留标记：preload 已在隔离世界执行 */
     ready: true;
 
+    /** 应用版本号（package.json version / 打包配置写入的版本号） */
+    appVersion(): Promise<IpcResult<string>>;
+
     students: {
       list(query?: ListQuery): Promise<IpcResult<ListResult>>;
       get(id: number): Promise<IpcResult<Student>>;

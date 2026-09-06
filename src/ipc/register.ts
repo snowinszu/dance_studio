@@ -123,6 +123,10 @@ function checkedRange(q?: { from?: string; to?: string }): ReportRange {
 
 /** 在 app ready 后、创建窗口前调用一次。 */
 export function registerIpc(): void {
+  // —— 应用信息 ——
+  // app.getVersion() 读 package.json 的 version 字段（打包后读构建配置写入的版本号）
+  handle(CH.appVersion, () => app.getVersion());
+
   // —— 学员档案 ——
   handle(CH.studentsList, (query?: ListQuery) => studentsRepo.list(query ?? {}));
 

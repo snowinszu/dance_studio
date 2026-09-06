@@ -429,6 +429,8 @@
   综合管理平台
   <span class="sep">·</span>
   版权所有
+  <span class="sep" data-od-id="footer-version-sep" hidden>·</span>
+  <span data-od-id="footer-version" hidden></span>
 </footer>
 
 <script>
@@ -525,6 +527,21 @@
 
   loadHomeSummary();
   window.addEventListener('focus', loadHomeSummary);
+
+  /* ── footer 版本号：拉一次即可，不随窗口 focus 重复请求 ── */
+  (function loadFooterVersion() {
+    var shell = window.studioShell;
+    if (!shell || typeof shell.appVersion !== 'function') return;
+    shell.appVersion().then(function(res) {
+      if (!res || !res.ok || !res.data) return;
+      var sep = document.querySelector('[data-od-id="footer-version-sep"]');
+      var slot = document.querySelector('[data-od-id="footer-version"]');
+      if (!slot) return;
+      slot.textContent = 'v' + res.data;
+      slot.hidden = false;
+      if (sep) sep.hidden = false;
+    }).catch(function() {});
+  })();
 </script>
 
 </body>

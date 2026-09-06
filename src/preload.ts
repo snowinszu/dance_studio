@@ -14,6 +14,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const CH = {
+  appVersion: 'app:version',
   studentsList: 'students:list',
   studentsGet: 'students:get',
   studentsCreate: 'students:create',
@@ -106,6 +107,8 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 const api = {
   // 保留：首页脚本历史上用作「preload 已执行」的可观测标记
   ready: true,
+
+  appVersion: () => invoke<string>(CH.appVersion),
 
   students: {
     list: (query?: unknown) => invoke(CH.studentsList, query),
