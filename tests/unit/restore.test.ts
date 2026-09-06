@@ -133,7 +133,7 @@ test('applyPendingRestore：源文件只读也能换库成功，且换入后的�
   const source = makeStudentsDb('source-readonly.db', '只读同学');
   chmodSync(source, 0o444); // 模拟从只读挂载盘 / 解压得到的只读备份文件
 
-  const res = applyPendingRestore(dbPath, source);
+  applyPendingRestore(dbPath, source);
 
   assert.deepEqual(namesIn(dbPath), ['只读同学']);
   // 换入后的库必须可写：不能只因为源文件只读，就把只读性带进正式库
