@@ -135,6 +135,11 @@ export function applyPendingRestore(dbPath: string, source: string): ApplyRestor
   const restoring = `${dbPath}.restoring`;
   fs.rmSync(restoring, { force: true });
   fs.copyFileSync(source, restoring); // 源不存在 / 读不了会在这里抛
+  // copyFileSync 在 macOS 上会带上源文件的权限位：若源文件本身只读（外部只读挂载盘 /
+  // 解压 / 网盘同步得到的 0444 文件），拷出来的库也会只读，导致 better-sqlite3 打开后
+  // 连 WAL pragma 都写不进去（attempt to write a readonly database）。这里强制改回可写，
+  // 不依赖源文件权限。
+  fs.chmodSync(restoring, 0o644);
 
   let preservedTo: string | null = null;
   if (fs.existsSync(dbPath)) {

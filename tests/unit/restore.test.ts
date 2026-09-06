@@ -4,7 +4,7 @@
  */
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import Database from 'better-sqlite3';
@@ -125,4 +125,21 @@ test('applyPendingRestore：原本没有现役库 → preservedTo 为 null，直
 
   assert.equal(res.preservedTo, null);
   assert.deepEqual(namesIn(dbPath), ['首位同学']);
+});
+
+test('applyPendingRestore：源文件只读也能换库成功，且换入后的库可写', () => {
+  const dbPath = path.join(workDir, 'readonly-src', 'dance-studio.db');
+  mkdirSync(path.dirname(dbPath), { recursive: true });
+  const source = makeStudentsDb('source-readonly.db', '只读同学');
+  chmodSync(source, 0o444); // 模拟从只读挂载盘 / 解压得到的只读备份文件
+
+  const res = applyPendingRestore(dbPath, source);
+
+  assert.deepEqual(namesIn(dbPath), ['只读同学']);
+  // 换入后的库必须可写：不能只因为源文件只读，就把只读性带进正式库
+  const db = new Database(dbPath);
+  assert.doesNotThrow(() => db.pragma('journal_mode = WAL'));
+  db.close();
+
+  chmodSync(source, 0o644); // 还原，方便临时目录清理
 });
