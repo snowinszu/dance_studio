@@ -61,6 +61,17 @@ function todayYmd() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** 与 course.js 的 WEEKDAY_LABELS 对齐：下标即 Date.getDay()（0=周日）。 */
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/** 'YYYY-MM-DD' → '周x MM-DD'，本地时区解析，避免 UTC 偏移把日期读错一天。 */
+function weekdayMmdd(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${WEEKDAY_LABELS[dt.getDay()]} ${p(m)}-${p(d)}`;
+}
+
 /* ───────────────────────── 顶部标签页 ───────────────────────── */
 
 // 后续 issue 往这里加 { hash:'#/quick', label:'快速打卡' } / { hash:'#/roster', label:'批量点名' }
@@ -977,31 +988,32 @@ const rosterState = {
   summary: null,
   /** 「选择课节」关联的 class_sessions.id；null = 未关联，走学员库筛选 */
   sessionId: null,
-  /** 当前日期下可选的课节（course.sessionsByDate） */
+  /** 当前日期所在整周（周一到周日）可选的课节（course.sessionsByWeek） */
   sessionOptions: [],
 };
 let rosterSearchDebounce = null;
 
-/** 拉某天的课节列表填「选择课节」下拉。course 模块未上线时静默失败即可。 */
+/** 拉「日期所在整周」的课节列表填「选择课节」下拉，方便补前几天的点名。course 模块未上线时静默失败即可。 */
 async function loadRosterSessions(date) {
-  if (!date || !shell.course || typeof shell.course.sessionsByDate !== 'function') {
+  if (!date || !shell.course || typeof shell.course.sessionsByWeek !== 'function') {
     rosterState.sessionOptions = [];
     return;
   }
   try {
-    rosterState.sessionOptions = unwrap(await shell.course.sessionsByDate({ date }));
+    rosterState.sessionOptions = unwrap(await shell.course.sessionsByWeek({ date }));
   } catch {
     rosterState.sessionOptions = [];
   }
 }
 
-/** 选中一节课：带出公共字段 + 用该班在册花名册替换候选名单，默认全体「出勤」。 */
+/** 选中一节课：带出公共字段（含日期——课节可能不在当前 #r-date 显示的这天）+ 用该班在册花名册替换候选名单，默认全体「出勤」。 */
 async function applyRosterSession(opt) {
   rosterState.sessionId = opt.id;
   const setVal = (id, v) => {
     const n = document.getElementById(id);
     if (n) n.value = v ?? '';
   };
+  setVal('r-date', opt.sessionDate);
   setVal('r-time', opt.startTime);
   setVal('r-class', opt.className);
   setVal('r-teacher', opt.teacherName || '');
@@ -1183,7 +1195,10 @@ async function submitRoster() {
   }
 }
 
-/** 「选择课节」下拉的 <option> 列表：第一项为「不关联」，其余来自 rosterState.sessionOptions。 */
+/**
+ * 「选择课节」下拉的 <option> 列表：第一项为「不关联」，其余来自 rosterState.sessionOptions
+ * ——覆盖 #r-date 所在整周（周一到周日），每项带上日期方便补前几天的点名。
+ */
 function sessionOptionEls() {
   return [
     el('option', { value: '', text: '不关联课节（手动填这节课信息）' }),
@@ -1191,7 +1206,7 @@ function sessionOptionEls() {
       el('option', {
         value: String(s.id),
         text:
-          `${s.startTime}–${s.endTime} ${s.className}` +
+          `${weekdayMmdd(s.sessionDate)} ${s.startTime}–${s.endTime} ${s.className}` +
           (s.teacherName ? ` · ${s.teacherName}` : '') +
           (s.status === '停课' ? ' · 已停课' : ''),
         selected: rosterState.sessionId === s.id || undefined,

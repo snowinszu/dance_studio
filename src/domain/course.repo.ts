@@ -733,17 +733,40 @@ export function sessionsByMonth(query: {
     .all(params) as ClassSessionListItem[];
 }
 
+/** 某天所在自然周的周一 / 周日（ISO 周，周一为起点）。 */
+function isoWeekRange(dateYmd: string): { monday: string; sunday: string } {
+  const [yStr, mStr, dStr] = dateYmd.split('-');
+  const dt = new Date(Number(yStr), Number(mStr) - 1, Number(dStr));
+  const jsDay = dt.getDay(); // 0=周日…6=周六
+  const mondayOffset = jsDay === 0 ? 6 : jsDay - 1; // 距本周一多少天
+  const monday = new Date(dt);
+  monday.setDate(dt.getDate() - mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return { monday: ymdOf(monday), sunday: ymdOf(sunday) };
+}
+
 /**
- * 某一天的排课实例（供考勤「选择课节」用，读带写）。含停课实例（带标记，渲染层置灰）。
- * 与 sessionsByMonth 一致，先按 date 所在月份 generateMonth 补齐，避免用户新建排课后
- * 未打开过课程表月视图、class_sessions 尚未物化导致下拉框查不到课节。
+ * 给定日期所在整周（周一到周日）的排课实例，供考勤「选择课节」用，读带写。
+ * 含停课实例（带标记，渲染层置灰）。补前几天点名时常要跨天挑课节，按周给比按单天
+ * 给更好用；一周可能横跨两个月，两边都要 generateMonth 补齐（与 sessionsByMonth
+ * 的读带写策略一致）。
  */
-export function sessionsByDate(date: string): SessionDateItem[] {
-  const [yStr, mStr] = date.split('-');
-  generateMonth(Number(yStr), Number(mStr));
+export function sessionsByWeek(anyDateInWeek: string): SessionDateItem[] {
+  const { monday, sunday } = isoWeekRange(anyDateInWeek);
+  const monthOf = (ymd: string): [number, number] => {
+    const [yStr, mStr] = ymd.split('-');
+    return [Number(yStr), Number(mStr)];
+  };
+  const [my, mm] = monthOf(monday);
+  const [sy, sm] = monthOf(sunday);
+  generateMonth(my, mm);
+  if (my !== sy || mm !== sm) generateMonth(sy, sm);
+
   return getDb()
     .prepare(
       `SELECT se.id, se.class_id AS classId, c.name AS className,
+              se.session_date AS sessionDate,
               se.teacher_id AS teacherId, t.name AS teacherName,
               se.start_time AS startTime, se.end_time AS endTime, se.status,
               (SELECT COUNT(*) FROM class_students cs
@@ -751,10 +774,10 @@ export function sessionsByDate(date: string): SessionDateItem[] {
          FROM class_sessions se
          JOIN classes c ON c.id = se.class_id
          LEFT JOIN teachers t ON t.id = se.teacher_id
-        WHERE se.deleted_at IS NULL AND se.session_date = ?
-        ORDER BY se.start_time, c.name COLLATE NOCASE`,
+        WHERE se.deleted_at IS NULL AND se.session_date BETWEEN @from AND @to
+        ORDER BY se.session_date, se.start_time, c.name COLLATE NOCASE`,
     )
-    .all(date) as SessionDateItem[];
+    .all({ from: monday, to: sunday }) as SessionDateItem[];
 }
 
 /**

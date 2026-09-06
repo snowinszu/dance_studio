@@ -588,10 +588,10 @@ export function registerIpc(): void {
     return courseRepo.sessionsByMonth(values);
   });
 
-  handle(CH.courseSessionsByDate, (args?: { date?: string }) => {
+  handle(CH.courseSessionsByWeek, (args?: { date?: string }) => {
     const date = typeof args?.date === 'string' ? args.date.trim() : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new AppError('BAD_REQUEST', '缺少合法日期');
-    return courseRepo.sessionsByDate(date);
+    return courseRepo.sessionsByWeek(date);
   });
 
   handle(CH.courseSessionCreate, (input?: ClassSessionInput) => {

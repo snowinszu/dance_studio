@@ -522,7 +522,7 @@ export interface BatchCheckInInput {
   force?: boolean;
   allowDuplicate?: boolean;
   /**
-   * 课程管理上线后：批量点名关联的课节 id（course:sessionsByDate 选中的那节）。
+   * 课程管理上线后：批量点名关联的课节 id（course:sessionsByWeek 选中的那节）。
    * 给出则每条流水回填 attendance_records.session_id；省略 → null，行为不变。
    */
   sessionId?: number | null;
@@ -875,6 +875,7 @@ export interface SessionDateItem {
   id: number;
   classId: number;
   className: string;
+  sessionDate: string;
   teacherId: number | null;
   teacherName: string | null;
   startTime: string;

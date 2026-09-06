@@ -205,7 +205,7 @@ declare global {
         month: number;
       }): Promise<IpcResult<GenerateMonthResult>>;
       sessionsByMonth(query: SessionMonthQuery): Promise<IpcResult<ClassSessionListItem[]>>;
-      sessionsByDate(args: { date: string }): Promise<IpcResult<SessionDateItem[]>>;
+      sessionsByWeek(args: { date: string }): Promise<IpcResult<SessionDateItem[]>>;
       sessionCreate(input: ClassSessionInput): Promise<IpcResult<SessionMutationResult>>;
       sessionUpdate(input: SessionUpdateInput): Promise<IpcResult<SessionMutationResult>>;
       sessionDelete(id: number): Promise<IpcResult<{ id: number }>>;

@@ -89,7 +89,7 @@ export const CH = {
   courseWeeklyTimetable: 'course:weeklyTimetable',
   courseGenerateMonth: 'course:generateMonth',
   courseSessionsByMonth: 'course:sessionsByMonth',
-  courseSessionsByDate: 'course:sessionsByDate',
+  courseSessionsByWeek: 'course:sessionsByWeek',
   courseSessionCreate: 'course:sessionCreate',
   courseSessionUpdate: 'course:sessionUpdate',
   courseSessionDelete: 'course:sessionDelete',

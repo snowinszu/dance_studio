@@ -177,27 +177,48 @@ test('sessionsByMonth teacherId 过滤：只返回该老师、排除 teacher_id 
   assert.ok(!forT.some((x) => x.classId === noT.id));
 });
 
-test('sessionsByDate：返回当天实例 + 在册人数；含停课实例（带标记）', () => {
-  const c = mkClass({ name: '按日班', danceType: '按日舞', capacity: 5 });
+test('sessionsByWeek：返回传入日期所在整周（周一到周日）的实例 + 在册人数；含停课实例（带标记）', () => {
+  const c = mkClass({ name: '按周班', danceType: '按周舞', capacity: 5 });
   mkSched({ classId: c.id, weekday: 3, startTime: '19:00', endTime: '20:00' });
   repo.generateMonth(Y, M);
-  const rows = repo.sessionsByDate('2026-09-02').filter((x) => x.classId === c.id);
+  // 2026-09-02（周三）所在周只有这一个周三，传周内任意一天（周五 09-04）应该都能查到它
+  const rows = repo.sessionsByWeek('2026-09-04').filter((x) => x.classId === c.id);
   assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.sessionDate, '2026-09-02');
   assert.equal(rows[0]?.status, '正常');
-  assert.equal(rows[0]?.className, '按日班');
+  assert.equal(rows[0]?.className, '按周班');
 
   repo.sessionUpdate({ id: rows[0]!.id, action: '停课', startTime: null, endTime: null, teacherId: null, note: null });
-  const rows2 = repo.sessionsByDate('2026-09-02').filter((x) => x.classId === c.id);
+  const rows2 = repo.sessionsByWeek('2026-09-04').filter((x) => x.classId === c.id);
   assert.equal(rows2[0]?.status, '停课', '停课实例仍返回、带标记');
 });
 
-test('sessionsByDate：未调用 generateMonth 也能读带写补齐当日实例（批量点名下拉框场景）', () => {
+test('sessionsByWeek：未调用 generateMonth 也能读带写补齐当周实例（批量点名下拉框场景）', () => {
   const c = mkClass({ name: '未展开班', danceType: '未展开舞' });
   mkSched({ classId: c.id, weekday: 3, startTime: '19:00', endTime: '20:00' });
   // 刻意不调用 generateMonth：模拟用户只在课程表新建了排课规则、从未打开过月视图
-  const rows = repo.sessionsByDate('2026-09-02').filter((x) => x.classId === c.id);
-  assert.equal(rows.length, 1, 'sessionsByDate 应自行补齐当月实例，而不是依赖调用方先跑 generateMonth');
+  const rows = repo.sessionsByWeek('2026-09-02').filter((x) => x.classId === c.id);
+  assert.equal(rows.length, 1, 'sessionsByWeek 应自行补齐当月实例，而不是依赖调用方先跑 generateMonth');
   assert.equal(rows[0]?.className, '未展开班');
+});
+
+test('sessionsByWeek：一周内多个工作日排课，按日期+时间正序返回，方便补前几天的点名', () => {
+  const c = mkClass({ name: '多日班', danceType: '多日舞' });
+  mkSched({ classId: c.id, weekday: 1, startTime: '09:00', endTime: '10:00' }); // 周一 2026-08-31
+  mkSched({ classId: c.id, weekday: 5, startTime: '19:00', endTime: '20:00' }); // 周五 2026-09-04
+  repo.generateMonth(2026, 8);
+  repo.generateMonth(2026, 9);
+
+  // 2026-09-02（周三）所在周是 08-31（周一）～ 09-06（周日），横跨 8/9 两个月
+  const rows = repo.sessionsByWeek('2026-09-02').filter((x) => x.classId === c.id);
+  assert.deepEqual(
+    rows.map((r) => [r.sessionDate, r.startTime]),
+    [
+      ['2026-08-31', '09:00'],
+      ['2026-09-04', '19:00'],
+    ],
+    '跨月的一周里两个工作日都要出现，按日期升序',
+  );
 });
 
 test('改周期规则不追溯已生成实例', () => {
