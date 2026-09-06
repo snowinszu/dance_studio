@@ -650,9 +650,18 @@ export function generateMonth(year: number, month: number): GenerateMonthResult 
     classEnd: string | null;
   }[];
 
+  // 两种情况都要跳过、不 INSERT：
+  // 1) 这条规则自己在这天已经生成过实例（schedule_id 匹配）——即便之后被手动改过时间，
+  //    也不能按规则现在的时间重新生成一条，否则「改时间不追溯」就被破坏了。
+  // 2) 这个 (class_id, session_date, start_time) 槽位已经被别的来源占用——比如手动加课
+  //    （schedule_id 为 NULL）或另一条规则，恰好撞在同一天同一时间。真实唯一约束
+  //    uniq_sess_slot 就是按这三列去重的，这里必须对齐，否则会撞索引崩溃（见 sessionCreate
+  //    的判重查询，用的正是这个键）。
   const exists = db.prepare(
     `SELECT 1 FROM class_sessions
-      WHERE schedule_id = @sid AND session_date = @d AND deleted_at IS NULL LIMIT 1`,
+      WHERE deleted_at IS NULL AND session_date = @d
+        AND (schedule_id = @sid OR (class_id = @classId AND start_time = @startTime))
+      LIMIT 1`,
   );
   const ins = db.prepare(
     `INSERT INTO class_sessions
@@ -676,7 +685,7 @@ export function generateMonth(year: number, month: number): GenerateMonthResult 
         if (dt.getDay() !== s.weekday) continue;
         const dYmd = ymdOf(dt);
         if (dYmd < lo || dYmd > hi) continue;
-        if (exists.get({ sid: s.id, d: dYmd })) continue;
+        if (exists.get({ sid: s.id, d: dYmd, classId: s.classId, startTime: s.startTime })) continue;
         ins.run({
           classId: s.classId,
           scheduleId: s.id,

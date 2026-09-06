@@ -53,6 +53,35 @@ test('generateMonth：每周三规则对 2026-09 生成 5 条；重复调 create
   assert.equal(r2.created, 0, '重复生成不新增');
 });
 
+test('手动加课已占用某天的槽位时，generateMonth 跳过该天而不是撞唯一索引崩溃', () => {
+  const c = mkClass({ name: '手动占位班', danceType: '生成舞' });
+  mkSched({ classId: c.id, weekday: 3, startTime: '19:00', endTime: '20:00' });
+
+  // 规则本该在 2026-09-02（周三）生成 19:00 的实例，但这个槽位已经被手动加课占了
+  // （schedule_id 为 NULL，和规则的 schedule_id 对不上——这正是线上崩溃的触发条件）
+  const { values } = validateSessionCreate({
+    classId: c.id,
+    sessionDate: '2026-09-02',
+    startTime: '19:00',
+    endTime: '20:00',
+  });
+  repo.sessionCreate(values);
+
+  let r: { created: number } = { created: -1 };
+  assert.doesNotThrow(() => {
+    r = repo.generateMonth(Y, M);
+  });
+  assert.equal(r.created, 4, '9-02 槽位已被手动占用而跳过，其余 4 个周三正常生成');
+
+  const list = repo.sessionsByMonth({ teacherId: null, year: Y, month: M }).filter((x) => x.classId === c.id);
+  assert.deepEqual(
+    list.map((x) => x.sessionDate),
+    ['2026-09-02', '2026-09-09', '2026-09-16', '2026-09-23', '2026-09-30'],
+    '9-02 是手动那条，其余 4 天正常按规则生成',
+  );
+  assert.equal(list.find((x) => x.sessionDate === '2026-09-02')?.origin, '手动', '9-02 那条仍是手动加课，没被覆盖');
+});
+
 test('人工「停课」后再 generateMonth 不复活；软删后 generateMonth 重铺一条新的', () => {
   const c = mkClass({ name: '停课复活班', danceType: '生成舞' });
   mkSched({ classId: c.id, weekday: 3, startTime: '10:00', endTime: '11:00' });
