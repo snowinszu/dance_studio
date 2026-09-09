@@ -313,9 +313,119 @@ function renderAlerts(alerts) {
   return section('预警中心', true, grid);
 }
 
+/* ───────────────────────── KPI 卡片悬停明细 ─────────────────────────
+ *
+ * 整体类比：KPI 卡片是仪表盘上的警示灯，只告诉你「亮了」；这里加一张贴在灯旁边的
+ * 小纸条——鼠标移过去才掀开，写清楚具体是谁、缺多少。纸条挂在 <body> 下、跨三张
+ * 卡片共用同一个节点（惰性创建），而不是每张卡片各自建一个，省得重复定位逻辑。
+ *
+ * 显示/隐藏都带一点延迟：移入卡片后短暂延迟才弹出（避免划过路过就弹一下），
+ * 移出卡片或移出纸条本身后也延迟一点再收起——这个「收起延迟」是留给用户从卡片
+ * 挪到纸条上滚动长名单的缓冲，纯粹 0 延迟的话，卡片和纸条之间几像素的空隙就会
+ * 把纸条关掉，长名单永远够不到。
+ */
+const HOVER_SHOW_DELAY_MS = 150;
+const HOVER_HIDE_DELAY_MS = 150;
+
+let hoverTimer = null;
+let tooltipEl = null;
+
+/** 惰性创建单例悬停提示框，挂在 <body> 下，跨卡片复用。 */
+function ensureTooltipEl() {
+  if (tooltipEl) return tooltipEl;
+  tooltipEl = el('div', {
+    class: 'kpi-tooltip',
+    role: 'tooltip',
+    onmouseenter: () => clearTimeout(hoverTimer),
+    onmouseleave: () => scheduleHideTooltip(),
+  });
+  document.body.appendChild(tooltipEl);
+  return tooltipEl;
+}
+
+function hideTooltipNow() {
+  if (tooltipEl) tooltipEl.classList.remove('show');
+}
+
+function scheduleHideTooltip() {
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(hideTooltipNow, HOVER_HIDE_DELAY_MS);
+}
+
+/**
+ * 把提示框定位到触发卡片下方，并夹在窗口视口内避免被裁切出屏幕。
+ * 用 getBoundingClientRect 而非 CSS 锚定，因为提示框是挂在 body 下的单例，
+ * 不是卡片的直接子节点，没法用 position:absolute 相对卡片定位。
+ */
+function positionTooltip(anchorRect) {
+  const tip = tooltipEl;
+  tip.style.left = '0px';
+  tip.style.top = '0px';
+  tip.classList.add('show');
+
+  const margin = 8;
+  const tipRect = tip.getBoundingClientRect();
+  const maxLeft = Math.max(margin, window.innerWidth - tipRect.width - margin);
+  const left = Math.min(Math.max(anchorRect.left, margin), maxLeft);
+
+  let top = anchorRect.bottom + margin;
+  if (top + tipRect.height > window.innerHeight - margin) {
+    top = anchorRect.top - tipRect.height - margin; // 下方放不下，翻到卡片上方
+  }
+  top = Math.max(margin, top);
+
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+/**
+ * 给一张 KPI 卡片挂上悬停明细。buildContent() 只在真正 hover 到时才求值，
+ * 避免为每张卡片提前构建一份可能用不到的 DOM。
+ */
+function attachHoverDetail(cardEl, buildContent) {
+  cardEl.classList.add('has-hover-detail');
+  cardEl.addEventListener('mouseenter', () => {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      const tip = ensureTooltipEl();
+      tip.replaceChildren(buildContent());
+      positionTooltip(cardEl.getBoundingClientRect());
+    }, HOVER_SHOW_DELAY_MS);
+  });
+  cardEl.addEventListener('mouseleave', () => scheduleHideTooltip());
+  return cardEl;
+}
+
+/** 悬停明细里的一份名单：为空显示 emptyText，否则逐行渲染，容器负责滚动。 */
+function hoverList(items, emptyText, renderRow) {
+  if (!items || items.length === 0) {
+    return el('div', { class: 'kpi-tooltip-empty' }, emptyText);
+  }
+  return el('ul', { class: 'kpi-tooltip-list' }, ...items.map((it) => el('li', {}, renderRow(it))));
+}
+
+/**
+ * 预警名单（lowBalance/lowStock）的悬停内容：alerts 为 null 说明预取失败，
+ * 与「这份名单本来就是空的」区分开，不要让加载失败误显示成「暂无」。
+ */
+function alertHoverContent(alerts, key, renderRow) {
+  if (!alerts) return el('div', { class: 'kpi-tooltip-empty' }, '加载失败，请重新打开报表页');
+  return hoverList(alerts[key], '暂无', renderRow);
+}
+
 /* ───────────────────────── 概览 KPI 区 ───────────────────────── */
 
-function renderOverview(ov) {
+function renderOverview(ov, alerts) {
+  const lowBalanceCard = kpiCard('课时余额预警', ov.lowBalanceCount, ov.lowBalanceCount > 0);
+  attachHoverDetail(lowBalanceCard, () =>
+    alertHoverContent(alerts, 'lowBalance', (it) => `${it.name} · 剩 ${it.remainingLessons} 课时`),
+  );
+
+  const lowStockCard = kpiCard('低库存预警', ov.lowStockCount, ov.lowStockCount > 0);
+  attachHoverDetail(lowStockCard, () =>
+    alertHoverContent(alerts, 'lowStock', (it) => `${it.name} · 剩 ${it.quantity}（阈值 ${it.threshold}）`),
+  );
+
   const grid = el(
     'div',
     { class: 'kpi-grid' },
@@ -323,8 +433,8 @@ function renderOverview(ov) {
     kpiCard('本区间出勤人次', ov.checkInsInRange),
     kpiCard('本区间课节数', ov.sessionsInRange),
     kpiCard('近 30 天新增学员', ov.newStudentsLast30d),
-    kpiCard('课时余额预警', ov.lowBalanceCount, ov.lowBalanceCount > 0),
-    kpiCard('低库存预警', ov.lowStockCount, ov.lowStockCount > 0),
+    lowBalanceCard,
+    lowStockCard,
   );
   return section('概览', true, grid);
 }
@@ -769,20 +879,27 @@ async function load(body) {
   const range = currentRange();
   const sections = [];
 
-  // 预警中心（第一屏）——窗口固定，不跟随时间范围。当前暂时下线（见 SHOW_ALERTS）。
-  if (SHOW_ALERTS) {
-    try {
-      const alerts = unwrap(await shell.reports.alerts());
-      sections.push(renderAlerts(alerts));
-    } catch (e) {
-      sections.push(sectionError('预警中心', e));
-    }
+  // 预警名单——窗口固定，不跟随时间范围。与「概览 KPI」并行发起请求：
+  // 概览区的两张预警卡片悬停明细要用这份数据，不能等悬停时才现发。
+  // 「预警中心」整块清单区域是否渲染仍受 SHOW_ALERTS 开关控制，两者解耦。
+  const alertsReq = shell.reports.alerts();
+  const overviewReq = shell.reports.overview(range);
+
+  let alerts = null;
+  try {
+    alerts = unwrap(await alertsReq);
+  } catch (e) {
+    alerts = null; // KPI 卡片悬停明细会显示「加载失败」而不是当作「暂无」
+    if (SHOW_ALERTS) sections.push(sectionError('预警中心', e));
+  }
+  if (SHOW_ALERTS && alerts) {
+    sections.push(renderAlerts(alerts));
   }
 
   // 概览 KPI——跟随时间范围
   try {
-    const overview = unwrap(await shell.reports.overview(range));
-    sections.push(renderOverview(overview));
+    const overview = unwrap(await overviewReq);
+    sections.push(renderOverview(overview, alerts));
     const hint = document.getElementById('unlinked-hint');
     if (hint) {
       hint.textContent =
