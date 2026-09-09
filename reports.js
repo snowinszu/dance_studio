@@ -415,7 +415,14 @@ function alertHoverContent(alerts, key, renderRow) {
 
 /* ───────────────────────── 概览 KPI 区 ───────────────────────── */
 
-function renderOverview(ov, alerts) {
+function renderOverview(ov, alerts, newStudents) {
+  const newStudentsCard = kpiCard('近 30 天新增学员', ov.newStudentsLast30d);
+  attachHoverDetail(newStudentsCard, () =>
+    newStudents == null
+      ? el('div', { class: 'kpi-tooltip-empty' }, '加载失败，请重新打开报表页')
+      : hoverList(newStudents, '暂无', (it) => `${it.name} · ${it.enrollDate}`),
+  );
+
   const lowBalanceCard = kpiCard('课时余额预警', ov.lowBalanceCount, ov.lowBalanceCount > 0);
   attachHoverDetail(lowBalanceCard, () =>
     alertHoverContent(alerts, 'lowBalance', (it) => `${it.name} · 剩 ${it.remainingLessons} 课时`),
@@ -432,7 +439,7 @@ function renderOverview(ov, alerts) {
     kpiCard('在读学员', ov.activeStudents),
     kpiCard('本区间出勤人次', ov.checkInsInRange),
     kpiCard('本区间课节数', ov.sessionsInRange),
-    kpiCard('近 30 天新增学员', ov.newStudentsLast30d),
+    newStudentsCard,
     lowBalanceCard,
     lowStockCard,
   );
@@ -879,10 +886,11 @@ async function load(body) {
   const range = currentRange();
   const sections = [];
 
-  // 预警名单——窗口固定，不跟随时间范围。与「概览 KPI」并行发起请求：
-  // 概览区的两张预警卡片悬停明细要用这份数据，不能等悬停时才现发。
-  // 「预警中心」整块清单区域是否渲染仍受 SHOW_ALERTS 开关控制，两者解耦。
+  // 预警名单 + 新增学员名单——窗口固定，不跟随时间范围。与「概览 KPI」并行发起
+  // 请求：概览区三张卡片的悬停明细都要用这份数据，不能等悬停时才现发。
+  // 「预警中心」整块清单区域是否渲染仍受 SHOW_ALERTS 开关控制，与预取解耦。
   const alertsReq = shell.reports.alerts();
+  const newStudentsReq = shell.reports.newStudents();
   const overviewReq = shell.reports.overview(range);
 
   let alerts = null;
@@ -896,10 +904,17 @@ async function load(body) {
     sections.push(renderAlerts(alerts));
   }
 
+  let newStudents = null;
+  try {
+    newStudents = unwrap(await newStudentsReq);
+  } catch (e) {
+    newStudents = null; // 同上：区分「加载失败」与「本来就没有新增学员」
+  }
+
   // 概览 KPI——跟随时间范围
   try {
     const overview = unwrap(await overviewReq);
-    sections.push(renderOverview(overview, alerts));
+    sections.push(renderOverview(overview, alerts, newStudents));
     const hint = document.getElementById('unlinked-hint');
     if (hint) {
       hint.textContent =

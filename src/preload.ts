@@ -85,6 +85,7 @@ const CH = {
   courseSessionDelete: 'course:sessionDelete',
   reportsOverview: 'reports:overview',
   reportsAlerts: 'reports:alerts',
+  reportsNewStudents: 'reports:newStudents',
   reportsAttendanceStats: 'reports:attendanceStats',
   reportsCourseStats: 'reports:courseStats',
   reportsStudentStats: 'reports:studentStats',
@@ -204,6 +205,7 @@ const api = {
   reports: {
     overview: (range: { from: string; to: string }) => invoke(CH.reportsOverview, range),
     alerts: () => invoke(CH.reportsAlerts),
+    newStudents: () => invoke(CH.reportsNewStudents),
     attendanceStats: (range: { from: string; to: string }) =>
       invoke(CH.reportsAttendanceStats, range),
     courseStats: (range: { from: string; to: string }) => invoke(CH.reportsCourseStats, range),

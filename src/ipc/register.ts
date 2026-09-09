@@ -624,6 +624,8 @@ export function registerIpc(): void {
 
   handle(CH.reportsAlerts, () => reportsRepo.getAlerts());
 
+  handle(CH.reportsNewStudents, () => reportsRepo.getNewStudents());
+
   handle(CH.reportsAttendanceStats, (q?: { from?: string; to?: string }) =>
     reportsRepo.getAttendanceStats(checkedRange(q)),
   );

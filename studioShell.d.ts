@@ -43,6 +43,7 @@ import type {
   ReportAttendanceStats,
   ReportCourseStats,
   ReportInventoryStats,
+  ReportNewStudent,
   ReportOverview,
   ReportRange,
   ReportStudentStats,
@@ -215,6 +216,7 @@ declare global {
     reports: {
       overview(range: ReportRange): Promise<IpcResult<ReportOverview>>;
       alerts(): Promise<IpcResult<ReportAlerts>>;
+      newStudents(): Promise<IpcResult<ReportNewStudent[]>>;
       attendanceStats(range: ReportRange): Promise<IpcResult<ReportAttendanceStats>>;
       courseStats(range: ReportRange): Promise<IpcResult<ReportCourseStats>>;
       studentStats(range: ReportRange): Promise<IpcResult<ReportStudentStats>>;

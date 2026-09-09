@@ -97,6 +97,7 @@ export const CH = {
   // 数据报表（纯只读聚合）
   reportsOverview: 'reports:overview',
   reportsAlerts: 'reports:alerts',
+  reportsNewStudents: 'reports:newStudents',
   reportsAttendanceStats: 'reports:attendanceStats',
   reportsCourseStats: 'reports:courseStats',
   reportsStudentStats: 'reports:studentStats',
