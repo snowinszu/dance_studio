@@ -256,6 +256,20 @@ export function getAlerts(): ReportAlerts {
   return { lowStock, lowBalance, dormant, emptySessions };
 }
 
+/** 近 30 天新登记学员名单，入学日期降序；与 getOverview 的 newStudentsLast30d 同口径（同一 cutoff）。 */
+export function getNewStudents(): { id: number; name: string; enrollDate: string }[] {
+  const cutoff30 = daysAgoLocal(30);
+  return getDb()
+    .prepare(
+      `SELECT id, name, enroll_date AS enrollDate
+         FROM students
+        WHERE deleted_at IS NULL AND enroll_date IS NOT NULL AND enroll_date >= @cutoff30
+        ORDER BY enroll_date DESC, name COLLATE NOCASE
+        LIMIT ${ALERT_LIMIT}`,
+    )
+    .all({ cutoff30 }) as { id: number; name: string; enrollDate: string }[];
+}
+
 /* ───────────────────────── 考勤指标 ───────────────────────── */
 
 /** 排行 / TOP 榜的返回行数上限。 */

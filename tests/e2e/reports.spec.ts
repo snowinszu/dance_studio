@@ -184,7 +184,61 @@ test('happy path：卡片进入 → KPI 随范围跳变 → 排名切排序 → 
   expect(pageErrors, '流程中不应有页面错误').toEqual([]);
 });
 
-test('边界：空库 → 各区空态、导出命中 REPORT_EMPTY 且不写文件', async () => {
+test('KPI 悬停明细：课时余额预警 / 低库存预警 / 近 30 天新增学员', async () => {
+  await page.evaluate(async () => {
+    const s = window.studioShell;
+    const u = (r) => {
+      if (!r || !r.ok) throw new Error(`${r && r.error && r.error.code}: ${r && r.error && r.error.message}`);
+      return r.data;
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    u(
+      await s.students.create({
+        name: 'E2E悬停学员',
+        phonePrimary: '13900009001',
+        remainingLessons: 2,
+        enrollDate: today,
+      }),
+    );
+    u(
+      await s.inventory.createItem({
+        name: 'E2E悬停库存品',
+        quantity: 1,
+        lowStockThreshold: 5,
+      }),
+    );
+  });
+
+  await gotoReports();
+  const tooltip = page.locator('.kpi-tooltip.show');
+
+  // 课时余额预警：悬停出现提示框，列出该学员姓名 + 剩余课时
+  await page.locator('.kpi-card', { hasText: '课时余额预警' }).hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('E2E悬停学员 · 剩 2 课时');
+
+  // 移出卡片 → 提示框消失
+  await page.mouse.move(10, 10);
+  await expect(tooltip).toHaveCount(0);
+
+  // 低库存预警：悬停出现提示框，列出该商品名称 + 当前库存 + 阈值
+  await page.locator('.kpi-card', { hasText: '低库存预警' }).hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('E2E悬停库存品 · 剩 1（阈值 5）');
+  await page.mouse.move(10, 10);
+  await expect(tooltip).toHaveCount(0);
+
+  // 近 30 天新增学员：悬停出现提示框，列出该学员姓名 + 入学日期
+  await page.locator('.kpi-card', { hasText: '近 30 天新增学员' }).hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('E2E悬停学员');
+  await page.mouse.move(10, 10);
+  await expect(tooltip).toHaveCount(0);
+
+  expect(pageErrors, '悬停流程中不应有页面错误').toEqual([]);
+});
+
+test('边界：空库 → 各区空态、导出命中 REPORT_EMPTY 且不写文件，KPI 悬停明细显示「暂无」', async () => {
   await gotoReports();
 
   const titles = await page.$$eval('.report-section > summary > span:first-child', (ns) =>
@@ -196,6 +250,16 @@ test('边界：空库 → 各区空态、导出命中 REPORT_EMPTY 且不写文�
     page.locator('.kpi-card', { hasText: '在读学员' }).locator('.kpi-value'),
   ).toHaveText('0');
   await expect(page.locator('.sec-empty').first()).toBeVisible();
+
+  // 空库下三张卡片的悬停明细都应显示「暂无」，而不是空白或报错
+  const tooltip = page.locator('.kpi-tooltip.show');
+  for (const label of ['近 30 天新增学员', '课时余额预警', '低库存预警']) {
+    await page.locator('.kpi-card', { hasText: label }).hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('暂无');
+    await page.mouse.move(10, 10);
+    await expect(tooltip).toHaveCount(0);
+  }
 
   const outFile = path.join(dbDir, 'should-not-exist.xlsx');
   await app.evaluate(({ dialog }, p) => {

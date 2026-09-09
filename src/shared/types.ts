@@ -962,6 +962,9 @@ export interface ReportAlerts {
   emptySessions: { sessionId: number; className: string; sessionDate: string; startTime: string }[];
 }
 
+/** 近 30 天新登记学员，入学日期降序；与 ReportOverview.newStudentsLast30d 同口径，最多 200 条。 */
+export type ReportNewStudent = { id: number; name: string; enrollDate: string };
+
 /** 考勤指标区。 */
 export interface ReportAttendanceStats {
   /** 本月课节数（该月 1 号 → to，正常、未软删） */
