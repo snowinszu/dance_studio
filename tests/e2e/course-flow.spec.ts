@@ -181,6 +181,8 @@ test('课程管理全链路：班级 / 花名册 / 课程表 / 计划表 / 冲�
   await page.waitForTimeout(500);
   await expect(page.locator('#r-class')).toHaveValue('少儿中国舞B');
   expect(await page.locator('#roster-list .roster-row').count()).toBe(3);
+  // 选课节不再预先勾选花名册（避免误记出勤），这里显式「全部设为出勤」再提交
+  await page.getByRole('button', { name: '全部设为出勤' }).click();
   await page.locator('.btn-primary', { hasText: '提交点名' }).click();
   await page.waitForTimeout(700);
 

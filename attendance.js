@@ -245,6 +245,15 @@ function openAdjustModal() {
       oninput: (e) => {
         state.keyword = e.target.value;
         state.picked = null;
+        // 中文等输入法组字期间跳过防抖重渲染，避免把带着组字状态的输入框整个换掉
+        // （否则永远打不出汉字）；等 compositionend 组字完成再触发搜索。
+        if (e.isComposing) return;
+        clearTimeout(deb);
+        deb = setTimeout(doSearch, 220);
+      },
+      oncompositionend: (e) => {
+        state.keyword = e.target.value;
+        state.picked = null;
         clearTimeout(deb);
         deb = setTimeout(doSearch, 220);
       },
@@ -477,6 +486,15 @@ function renderListInto(container) {
     placeholder: '按学员姓名或手机号筛选',
     value: listState.keyword,
     oninput: (e) => {
+      listState.keyword = e.target.value;
+      listState.offset = 0;
+      // 中文等输入法组字期间跳过防抖重渲染，避免把带着组字状态的输入框整个换掉
+      // （否则永远打不出汉字）；等 compositionend 组字完成再触发。
+      if (e.isComposing) return;
+      clearTimeout(keywordDebounce);
+      keywordDebounce = setTimeout(reloadList, 240);
+    },
+    oncompositionend: (e) => {
       listState.keyword = e.target.value;
       listState.offset = 0;
       clearTimeout(keywordDebounce);
@@ -803,6 +821,17 @@ function renderQuickInto(container) {
     oninput: (e) => {
       quickState.keyword = e.target.value;
       quickState.picked = null;
+      // 中文等输入法组字期间（拼音候选还没敲定）也会不断触发 input：这时如果照常
+      // 防抖后整页重渲染，会把这个输入框本身连着组字状态一起换掉，导致永远打不出
+      // 汉字。isComposing 为真时只更新状态、不排搜索，等 compositionend 组字完成
+      // 再触发，避免中途炸掉输入法。
+      if (e.isComposing) return;
+      clearTimeout(quickSearchDebounce);
+      quickSearchDebounce = setTimeout(quickSearch, 220);
+    },
+    oncompositionend: (e) => {
+      quickState.keyword = e.target.value;
+      quickState.picked = null;
       clearTimeout(quickSearchDebounce);
       quickSearchDebounce = setTimeout(quickSearch, 220);
     },
@@ -990,8 +1019,59 @@ const rosterState = {
   sessionId: null,
   /** 当前日期所在整周（周一到周日）可选的课节（course.sessionsByWeek） */
   sessionOptions: [],
+  /** 不关联课节时，按班级筛花名册；null = 不筛班级。与舞种筛选互斥（选一个清另一个）。 */
+  classId: null,
+  /** 「班级」下拉的候选项（course.classList） */
+  classOptions: [],
 };
 let rosterSearchDebounce = null;
+
+/** 拉全部班级填「班级」筛选下拉。course 模块未上线时静默失败即可。 */
+async function loadRosterClassOptions() {
+  if (!shell.course || typeof shell.course.classList !== 'function') {
+    rosterState.classOptions = [];
+    return;
+  }
+  try {
+    const list = unwrap(await shell.course.classList({}));
+    rosterState.classOptions = list
+      .map((c) => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  } catch {
+    rosterState.classOptions = [];
+  }
+}
+
+/**
+ * 不关联课节时刷新候选名单：选了班级 → 用该班在册花名册（course.rosterList），
+ * 关键字在客户端再筛一遍；没选班级 → 走原来的舞种 / 关键字学员库筛选。
+ */
+async function refreshRosterCandidates() {
+  if (rosterState.classId && shell.course && typeof shell.course.rosterList === 'function') {
+    try {
+      const roster = unwrap(await shell.course.rosterList(rosterState.classId));
+      let list = roster.map((m) => ({
+        id: m.studentId,
+        name: m.name,
+        phone: m.phone,
+        remainingLessons: m.remainingLessons,
+        cardExpireDate: m.cardExpireDate,
+        danceTypes: [],
+      }));
+      const kw = rosterState.keyword.trim();
+      if (kw) {
+        const low = kw.toLowerCase();
+        list = list.filter((c) => c.name.toLowerCase().includes(low) || (c.phone || '').includes(kw));
+      }
+      rosterState.candidates = list;
+    } catch (err) {
+      toast(err.message);
+      rosterState.candidates = [];
+    }
+    return;
+  }
+  await rosterFetch({});
+}
 
 /** 拉「日期所在整周」的课节列表填「选择课节」下拉，方便补前几天的点名。course 模块未上线时静默失败即可。 */
 async function loadRosterSessions(date) {
@@ -1006,7 +1086,11 @@ async function loadRosterSessions(date) {
   }
 }
 
-/** 选中一节课：带出公共字段（含日期——课节可能不在当前 #r-date 显示的这天）+ 用该班在册花名册替换候选名单，默认全体「出勤」。 */
+/**
+ * 选中一节课：带出公共字段（含日期——课节可能不在当前 #r-date 显示的这天）+ 用该班
+ * 在册花名册替换候选名单。不预先勾选任何人——请假 / 缺勤的学员容易被连带误记出勤，
+ * 由老师逐个勾选更保险；要整班出勤用「全部设为出勤」一键代劳。
+ */
 async function applyRosterSession(opt) {
   rosterState.sessionId = opt.id;
   const setVal = (id, v) => {
@@ -1027,15 +1111,15 @@ async function applyRosterSession(opt) {
     cardExpireDate: m.cardExpireDate,
     danceTypes: [],
   }));
-  rosterState.picks = new Map(rosterState.candidates.map((c) => [c.id, { type: '出勤', lessons: 1 }]));
+  rosterState.picks = new Map();
   paintRosterList();
 }
 
-/** 取消课节关联，回到「按舞种 / 关键字从学员库筛」。 */
+/** 取消课节关联，回到「按班级 / 舞种 / 关键字筛花名册」。 */
 async function clearRosterSession() {
   rosterState.sessionId = null;
   rosterState.picks.clear();
-  await rosterFetch({});
+  await refreshRosterCandidates();
   paintRosterList();
 }
 
@@ -1291,9 +1375,41 @@ function renderRosterInto(container) {
     ),
   );
 
+  const classSel = el(
+    'select',
+    {
+      id: 'r-class-filter',
+      class: 'toolbar-select',
+      'aria-label': '班级',
+      onchange: async (e) => {
+        const v = e.target.value;
+        rosterState.classId = v ? Number(v) : null;
+        rosterState.sessionId = null; // 改用花名册筛选 → 脱离课节关联
+        const ss = document.getElementById('r-session');
+        if (ss) ss.value = '';
+        if (rosterState.classId) {
+          // 按班级筛和按舞种筛是两套互斥的候选来源，选了班级就清掉舞种，避免两边打架
+          rosterState.danceType = '';
+          const ds = document.getElementById('r-dance-filter');
+          if (ds) ds.value = '';
+        }
+        await refreshRosterCandidates();
+        paintRosterList();
+      },
+    },
+    el('option', { value: '', text: '全部班级' }),
+    ...rosterState.classOptions.map((c) =>
+      el('option', {
+        value: String(c.id),
+        text: c.name,
+        selected: rosterState.classId === c.id || undefined,
+      }),
+    ),
+  );
   const danceSel = el(
     'select',
     {
+      id: 'r-dance-filter',
       class: 'toolbar-select',
       'aria-label': '舞种',
       onchange: async (e) => {
@@ -1301,7 +1417,12 @@ function renderRosterInto(container) {
         rosterState.sessionId = null; // 改用学员库筛选 → 脱离课节关联
         const ss = document.getElementById('r-session');
         if (ss) ss.value = '';
-        await rosterFetch({});
+        if (rosterState.danceType) {
+          rosterState.classId = null;
+          const cs = document.getElementById('r-class-filter');
+          if (cs) cs.value = '';
+        }
+        await refreshRosterCandidates();
         paintRosterList();
       },
     },
@@ -1322,7 +1443,7 @@ function renderRosterInto(container) {
       if (ss) ss.value = '';
       clearTimeout(rosterSearchDebounce);
       rosterSearchDebounce = setTimeout(async () => {
-        await rosterFetch({});
+        await refreshRosterCandidates();
         paintRosterList();
       }, 220);
     },
@@ -1369,6 +1490,7 @@ function renderRosterInto(container) {
         'div',
         { class: 'toolbar' },
         el('span', { class: 'toolbar-label', text: '花名册' }),
+        classSel,
         danceSel,
         kw,
         allAttendBtn,
@@ -1391,9 +1513,11 @@ async function renderRoster() {
   rosterState.danceType = '';
   rosterState.keyword = '';
   rosterState.sessionId = null;
+  rosterState.classId = null;
   view.replaceChildren(el('div', { class: 'empty', text: '加载中…' }));
   try {
     await rosterFetch({ withOptions: true });
+    await loadRosterClassOptions();
     await loadRosterSessions(todayYmd());
     renderRosterInto(view);
   } catch (err) {

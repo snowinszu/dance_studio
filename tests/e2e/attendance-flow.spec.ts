@@ -89,7 +89,7 @@ test('首页 → 快速打卡扣课时 → 批量缺勤不扣 → 撤销回补 �
   // 批量点名：甲学员缺勤 → 记录 +1，余额仍 1
   await page.locator('.nav-tab', { hasText: '批量点名' }).click();
   await page.fill('#r-class', '芭蕾提高');
-  await page.selectOption('.toolbar-select', '芭蕾');
+  await page.selectOption('#r-dance-filter', '芭蕾');
   const row = page.locator('#roster-list .roster-row', { hasText: '甲学员' });
   await row.locator('input[type=checkbox]').check();
   await row.getByRole('button', { name: '缺勤', exact: true }).click();
