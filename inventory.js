@@ -482,16 +482,126 @@ function todayInput() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/**
+ * 关键字搜索选学员的选择器：搜索框（防抖 220ms + 中文输入法 compositionend 处理，
+ * 同 attendance.js 的花名册搜索）+ 候选卡片列表；选中后收起成一条「已选」摘要，
+ * 点「更换」再展开搜索。用一个隐藏 input 兜住 studentId，让外层表单原有的
+ * `form.elements.studentId.value` 读取方式不用跟着改。
+ *
+ * 替换掉原来「一次拉 2000 个学员塞进 &lt;select&gt;」的做法——学员一多，下拉就没法用了。
+ */
+function studentPicker() {
+  const state = { keyword: '', picked: null, candidates: [], searching: false };
+  let deb = null;
+  const idInput = el('input', { type: 'hidden', name: 'studentId', value: '' });
+  const body = el('div', { class: 'student-picker' });
+
+  const doSearch = async () => {
+    const kw = state.keyword.trim();
+    if (!kw) {
+      state.candidates = [];
+      paint();
+      return;
+    }
+    state.searching = true;
+    try {
+      state.candidates = unwrap(await shell.students.list({ search: kw, limit: 20 })).rows;
+    } catch (err) {
+      toast(err.message);
+      state.candidates = [];
+    }
+    state.searching = false;
+    paint();
+  };
+
+  function paint() {
+    if (state.picked) {
+      const p = state.picked;
+      idInput.value = String(p.id);
+      body.replaceChildren(
+        el('div', { class: 'candidate picked picked-static' },
+          el('div', { class: 'c-main' },
+            el('div', { class: 'c-name', text: p.name }),
+            el('div', { class: 'c-sub', text: `${p.phonePrimary || '无手机号'} · ${p.status}` }),
+          ),
+          el('button', {
+            type: 'button',
+            class: 'btn btn-ghost btn-sm',
+            onclick: () => {
+              state.picked = null;
+              state.keyword = '';
+              state.candidates = [];
+              paint();
+            },
+          }, '更换'),
+        ),
+      );
+      return;
+    }
+
+    idInput.value = '';
+    const search = el('input', {
+      id: 'f-studentId',
+      class: 'toolbar-search',
+      type: 'search',
+      placeholder: '按姓名或手机号搜索学员',
+      value: state.keyword,
+      oninput: (e) => {
+        state.keyword = e.target.value;
+        // 中文等输入法组字期间跳过防抖重渲染，避免把带着组字状态的输入框整个换掉
+        // （否则永远打不出汉字）；等 compositionend 组字完成再触发搜索。
+        if (e.isComposing) return;
+        clearTimeout(deb);
+        deb = setTimeout(doSearch, 220);
+      },
+      oncompositionend: (e) => {
+        state.keyword = e.target.value;
+        clearTimeout(deb);
+        deb = setTimeout(doSearch, 220);
+      },
+    });
+    const list = el(
+      'div',
+      { class: 'candidate-list' },
+      ...(state.candidates.length === 0 && state.keyword.trim() && !state.searching
+        ? [el('div', { class: 'field-hint', text: '没有匹配的学员' })]
+        : state.candidates.map((c) =>
+            el(
+              'button',
+              {
+                type: 'button',
+                class: 'candidate',
+                onclick: () => {
+                  state.picked = c;
+                  paint();
+                },
+              },
+              el('div', { class: 'c-main' },
+                el('div', { class: 'c-name', text: c.name }),
+                el('div', { class: 'c-sub', text: `${c.phonePrimary || '无手机号'} · ${c.status}` }),
+              ),
+            ),
+          )),
+    );
+    body.replaceChildren(search, list);
+  }
+
+  paint();
+  return el('div', {}, body, idInput);
+}
+
 async function renderAllocateForm(preItemId) {
   view.replaceChildren(el('div', { text: '载入…' }));
 
   let items = [];
-  let students = [];
+  let hasStudents = true;
   try {
-    [items, students] = await Promise.all([
+    const [itemRows, studentTotal] = await Promise.all([
       shell.inventory.listItems({ limit: 1000 }).then((r) => unwrap(r).rows),
-      shell.students.list({ limit: 2000 }).then((r) => unwrap(r).rows),
+      shell.students.list({ limit: 1 }).then((r) => unwrap(r).total),
     ]);
+    items = itemRows;
+    hasStudents = studentTotal > 0;
   } catch (e) {
     view.replaceChildren(
       el('div', { class: 'empty' }, el('strong', { text: '加载失败' }), el('span', { text: e.message })),
@@ -509,7 +619,7 @@ async function renderAllocateForm(preItemId) {
     el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { location.hash = '#/items'; } }, '返回列表'),
   );
 
-  if (sellable.length === 0 || students.length === 0) {
+  if (sellable.length === 0 || !hasStudents) {
     view.replaceChildren(head,
       el('div', { class: 'empty' },
         el('strong', { text: sellable.length === 0 ? '没有可分配的物件' : '还没有学员' }),
@@ -532,12 +642,6 @@ async function renderAllocateForm(preItemId) {
       }, `${it.name}（剩 ${it.quantity} ${it.unit}）`),
     ),
   );
-  const studentSel = el('select', { id: 'f-studentId', name: 'studentId' },
-    el('option', { value: '' }, '请选择学员'),
-    ...students.map((s) =>
-      el('option', { value: String(s.id) }, `${s.name}${s.phonePrimary ? ' · ' + s.phonePrimary : ''}`),
-    ),
-  );
   const qtyInp = el('input', { id: 'f-quantity', name: 'quantity', type: 'number', min: '1', step: '1', value: '1', inputmode: 'numeric' });
   const dateInp = el('input', { id: 'f-claimedAt', name: 'claimedAt', type: 'date', value: todayInput() });
   const noteInp = el('textarea', { id: 'f-note', name: 'note', rows: 2 });
@@ -554,7 +658,7 @@ async function renderAllocateForm(preItemId) {
     el('fieldset', { class: 'form-group' },
       el('legend', { text: '领用登记' }),
       field('itemId', '物件', itemSel),
-      field('studentId', '学员', studentSel),
+      field('studentId', '学员', studentPicker()),
       field('quantity', '领取数量', qtyInp),
       field('claimedAt', '领取日期', dateInp),
       field('note', '备注', noteInp),

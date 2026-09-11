@@ -67,7 +67,8 @@ async function createItem(name: string, quantity: number, threshold: number): Pr
 async function allocate(quantity: number): Promise<void> {
   await page.getByRole('button', { name: '分配', exact: true }).click();
   await page.waitForFunction(() => location.hash.startsWith('#/allocate'));
-  await page.selectOption('#f-studentId', { index: 1 });
+  await page.fill('#f-studentId', '林');
+  await page.locator('.candidate', { hasText: '林同学' }).click();
   await page.fill('#f-quantity', String(quantity));
   await page.getByRole('button', { name: '确认分配' }).click();
 }
@@ -122,6 +123,49 @@ test('happy path：新建 → 分配 → 库存扣减 → 流水出现；库存�
   await expect(page.locator('#items-body .student-row', { hasText: '演出服' })).toContainText('库存偏低');
 
   expect(pageErrors, '流程中不应有页面错误').toEqual([]);
+});
+
+test('分配物件：按关键字搜索学员——缩小候选、无匹配提示、可更换已选', async () => {
+  await page.evaluate(() =>
+    window.studioShell.students.create({ name: '林小妹', phonePrimary: '13900009999' }),
+  );
+  await gotoInventory();
+  await createItem('头饰', 10, 2);
+
+  await page.getByRole('button', { name: '分配', exact: true }).click();
+  await page.waitForFunction(() => location.hash.startsWith('#/allocate'));
+
+  // 搜「林」→ 两个候选（林同学 / 林小妹）
+  await page.fill('#f-studentId', '林');
+  await expect(page.locator('.candidate')).toHaveCount(2);
+
+  // 关键字缩小到「同学」→ 只剩「林同学」
+  await page.fill('#f-studentId', '同学');
+  await expect(page.locator('.candidate')).toHaveCount(1);
+  await expect(page.locator('.candidate')).toContainText('林同学');
+
+  // 搜一个不存在的名字 → 「没有匹配的学员」
+  await page.fill('#f-studentId', '不存在的名字xyz');
+  await expect(page.locator('.field-hint', { hasText: '没有匹配的学员' })).toBeVisible();
+
+  // 重新搜「林小妹」并选中 → 收起成「已选」摘要
+  await page.fill('#f-studentId', '林小妹');
+  await page.locator('.candidate', { hasText: '林小妹' }).click();
+  await expect(page.locator('.candidate.picked')).toContainText('林小妹');
+
+  // 「更换」退回搜索框
+  await page.getByRole('button', { name: '更换' }).click();
+  await expect(page.locator('#f-studentId')).toBeVisible();
+
+  // 重新选中「林小妹」并提交，库存正确扣减 → 说明隐藏 studentId 真的传对了
+  await page.fill('#f-studentId', '林小妹');
+  await page.locator('.candidate', { hasText: '林小妹' }).click();
+  await page.fill('#f-quantity', '2');
+  await page.getByRole('button', { name: '确认分配' }).click();
+  await page.waitForFunction(() => /^#\/items\/\d+$/.test(location.hash));
+  await expect(page.locator('.page-sub').first()).toHaveText('当前库存 8 件');
+
+  expect(pageErrors).toEqual([]);
 });
 
 test('删除领用记录 → 库存回补', async () => {
