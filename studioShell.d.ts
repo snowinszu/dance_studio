@@ -227,6 +227,14 @@ declare global {
       homeSummary(): Promise<IpcResult<HomeSummary>>;
     };
 
+    /** 应用设置：极少量全局配置项。 */
+    settings: {
+      /** 课时余额预警阈值：在读学员剩余课时 <= 此值计入预警。未设置过则为 3。 */
+      getLowBalanceThreshold(): Promise<IpcResult<number>>;
+      /** 设置课时余额预警阈值；必须是不小于 0 的整数，否则 VALIDATION_FAILED。 */
+      setLowBalanceThreshold(value: number): Promise<IpcResult<number>>;
+    };
+
     /** 数据库快照备份。 */
     backup: {
       /** 立即生成一份日常快照，返回其元信息。 */

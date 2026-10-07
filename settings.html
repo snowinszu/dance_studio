@@ -93,6 +93,22 @@
     .card-note { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
     .card-note.after-list { margin: 18px 0 0; }
 
+    /* ─── 表单字段（复用 inventory.html 的 .field 规范）─────────────── */
+    .field { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+    .field > label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .field input[type="number"] {
+      width: 100px; min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--fg); font: inherit;
+    }
+    .field input[type="number"]:focus {
+      outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
+    }
+    .field.has-error input { border-color: var(--cc-1); }
+    .field-error { color: var(--cc-1); font-size: 12px; margin-top: 5px; min-height: 0; }
+    .field-hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+
     /* ─── 按钮（复用 reports.html）───────────────────────────────────── */
     .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
     .btn {
@@ -254,6 +270,23 @@
         </ol>
         <p class="restore-help-more">完整说明（含常见问题）见项目内的 <code>docs/backup-and-restore.md</code>。</p>
       </details>
+    </section>
+
+    <section class="card" data-od-id="alert-threshold-card" aria-labelledby="alert-threshold-card-title">
+      <h2 class="card-title" id="alert-threshold-card-title">预警阈值</h2>
+      <p class="card-note">
+        在读学员剩余课时低于或等于这个数时，报表页的「课时余额预警」就会把他计进去。
+        改小它预警会更晚触发，改大则更早——按实际续费周期调整。
+      </p>
+
+      <div class="field" id="threshold-field">
+        <div>
+          <label for="low-balance-threshold">课时余额预警阈值</label>
+          <input type="number" id="low-balance-threshold" min="0" step="1" inputmode="numeric">
+          <p class="field-error" id="threshold-error" hidden></p>
+        </div>
+        <button class="btn btn-primary" id="btn-save-threshold" type="button">保存</button>
+      </div>
     </section>
   </main>
 

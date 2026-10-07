@@ -163,6 +163,7 @@ test('getOverview：六项 KPI + unlinkedCheckInsThisYear 口径正确', () => {
     sessionsInRange: 1,
     newStudentsLast30d: 1,
     lowBalanceCount: 1,
+    lowBalanceThreshold: 3,
     lowStockCount: 2,
     unlinkedCheckInsThisYear: 1,
   });

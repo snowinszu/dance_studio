@@ -12,6 +12,7 @@
  *   不在 SQL 里用 date('now')——那是 UTC，与库里本地日期串会差一天。
  */
 import { getDb } from '../db/connection';
+import { getLowBalanceThreshold } from './settings.repo';
 import type {
   ClassAttendanceMatrix,
   ClassMatrixBlock,
@@ -98,7 +99,7 @@ function monthsBetween(from: string, to: string): string[] {
  * - checkInsInRange           区间内出勤人次（type 出勤 / 补课）
  * - sessionsInRange           区间内正常课节数
  * - newStudentsLast30d        近 30 天新登记学员（enroll_date >= 今天-30，含当天）
- * - lowBalanceCount           在读且剩余课时 <= 3
+ * - lowBalanceCount           在读且剩余课时 <= 预警阈值（settings.repo，可调，缺省 3）
  * - lowStockCount             未软删物件且库存 <= 预警阈值
  * - unlinkedCheckInsThisYear  当年（取 to 的年份）session_id 为空的出勤 / 补课条数——
  *   这些进不了「按班级」导出，页面用它提示管理者去回填课节
@@ -111,7 +112,7 @@ export function getOverview(range: ReportRange): ReportOverview {
   const yearStart = `${yr}-01-01`;
   const yearEnd = `${yr}-12-31`;
 
-  const scalar = (sql: string, params: Record<string, string> = {}): number =>
+  const scalar = (sql: string, params: Record<string, string | number> = {}): number =>
     (db.prepare(sql).get(params) as { n: number }).n;
 
   const activeStudents = scalar(
@@ -138,10 +139,12 @@ export function getOverview(range: ReportRange): ReportOverview {
     { cutoff30 },
   );
 
+  const lowBalanceThreshold = getLowBalanceThreshold();
   const lowBalanceCount = scalar(
     `SELECT COUNT(*) AS n FROM students
       WHERE deleted_at IS NULL AND status = '在读'
-        AND remaining_lessons IS NOT NULL AND remaining_lessons <= 3`,
+        AND remaining_lessons IS NOT NULL AND remaining_lessons <= @lowBalanceThreshold`,
+    { lowBalanceThreshold },
   );
 
   const lowStockCount = scalar(
@@ -162,6 +165,7 @@ export function getOverview(range: ReportRange): ReportOverview {
     sessionsInRange,
     newStudentsLast30d,
     lowBalanceCount,
+    lowBalanceThreshold,
     lowStockCount,
     unlinkedCheckInsThisYear,
   };
@@ -177,18 +181,22 @@ const DORMANT_DAYS = 60;
 /** 「空课」回看窗口：近 N 天内、已发生、0 到课人次的正常课节。 */
 const EMPTY_SESSION_DAYS = 30;
 
-/** 在读且剩余课时 <= 3 的学员。预警中心与学员指标区共用。 */
+/** 在读且剩余课时 <= 预警阈值（可调，settings.repo）的学员。预警中心与学员指标区共用。 */
 function queryLowBalance(): { id: number; name: string; remainingLessons: number }[] {
   return getDb()
     .prepare(
       `SELECT id, name, remaining_lessons AS remainingLessons
          FROM students
         WHERE deleted_at IS NULL AND status = '在读'
-          AND remaining_lessons IS NOT NULL AND remaining_lessons <= 3
+          AND remaining_lessons IS NOT NULL AND remaining_lessons <= @lowBalanceThreshold
         ORDER BY remaining_lessons ASC, name COLLATE NOCASE
         LIMIT ${ALERT_LIMIT}`,
     )
-    .all() as { id: number; name: string; remainingLessons: number }[];
+    .all({ lowBalanceThreshold: getLowBalanceThreshold() }) as {
+    id: number;
+    name: string;
+    remainingLessons: number;
+  }[];
 }
 
 /** 在读、未软删，近 DORMANT_DAYS 天无「出勤」的学员，带历来最近一次出勤日期。共用。 */
@@ -215,7 +223,7 @@ function queryDormant(): { id: number; name: string; lastAttendDate: string | nu
  * 「今天必须处理」的四组异常，不受页面时间范围约束（窗口是固定常量）。
  *
  * - lowStock       未软删物件，库存 <= 预警阈值，最紧缺在前
- * - lowBalance     在读学员，剩余课时 <= 3
+ * - lowBalance     在读学员，剩余课时 <= 预警阈值（可调，settings.repo）
  * - dormant        在读、未软删，近 DORMANT_DAYS 天无「出勤」记录；带最近一次出勤日期
  * - emptySessions  近 EMPTY_SESSION_DAYS 天内、已发生、status='正常'、关联出勤/补课人次为 0 的课节
  */
@@ -579,6 +587,7 @@ export function getStudentStats(range: ReportRange): ReportStudentStats {
     monthlyNew,
     referrerTop,
     lowBalance: queryLowBalance(),
+    lowBalanceThreshold: getLowBalanceThreshold(),
     dormant: queryDormant(),
   };
 }

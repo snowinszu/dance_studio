@@ -92,6 +92,8 @@ const CH = {
   reportsInventoryStats: 'reports:inventoryStats',
   reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
   reportsHomeSummary: 'reports:homeSummary',
+  settingsGetLowBalanceThreshold: 'settings:getLowBalanceThreshold',
+  settingsSetLowBalanceThreshold: 'settings:setLowBalanceThreshold',
   backupCreate: 'backup:create',
   backupList: 'backup:list',
   backupReveal: 'backup:reveal',
@@ -215,6 +217,13 @@ const api = {
     exportAttendanceByClass: (year: number) =>
       invoke(CH.reportsExportAttendanceByClass, { year }),
     homeSummary: () => invoke(CH.reportsHomeSummary),
+  },
+
+  // 应用设置：极少量全局配置项
+  settings: {
+    getLowBalanceThreshold: () => invoke<number>(CH.settingsGetLowBalanceThreshold),
+    setLowBalanceThreshold: (value: number) =>
+      invoke<number>(CH.settingsSetLowBalanceThreshold, value),
   },
 
   // 数据库快照备份

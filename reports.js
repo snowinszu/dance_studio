@@ -423,7 +423,11 @@ function renderOverview(ov, alerts, newStudents) {
       : hoverList(newStudents, '暂无', (it) => `${it.name} · ${it.enrollDate}`),
   );
 
-  const lowBalanceCard = kpiCard('课时余额预警', ov.lowBalanceCount, ov.lowBalanceCount > 0);
+  const lowBalanceCard = kpiCard(
+    `课时余额预警（≤ ${ov.lowBalanceThreshold}）`,
+    ov.lowBalanceCount,
+    ov.lowBalanceCount > 0,
+  );
   attachHoverDetail(lowBalanceCard, () =>
     alertHoverContent(alerts, 'lowBalance', (it) => `${it.name} · 剩 ${it.remainingLessons} 课时`),
   );
@@ -697,7 +701,7 @@ function renderStudent(stats) {
       stats.referrerTop.map((r) => [r.referrer, r.count]),
     ),
 
-    subHead('课时余额预警（≤ 3）'),
+    subHead(`课时余额预警（≤ ${stats.lowBalanceThreshold}）`),
     twoColTable(
       '学员',
       '剩余课时',
