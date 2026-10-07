@@ -16,6 +16,10 @@ const btnBackupTo = document.getElementById('btn-backup-to');
 const btnOpenDir = document.getElementById('btn-open-dir');
 const btnRestoreFile = document.getElementById('btn-restore-file');
 const toastEl = document.getElementById('toast');
+const thresholdField = document.getElementById('threshold-field');
+const thresholdInput = document.getElementById('low-balance-threshold');
+const thresholdError = document.getElementById('threshold-error');
+const btnSaveThreshold = document.getElementById('btn-save-threshold');
 
 /* ───────────────────────── 小工具 ───────────────────────── */
 
@@ -222,6 +226,47 @@ async function doRestore(trigger) {
   }
 }
 
+/* ───────────────────────── 预警阈值 ───────────────────────── */
+
+function setThresholdError(msg) {
+  thresholdField.classList.toggle('has-error', Boolean(msg));
+  thresholdError.textContent = msg || '';
+  thresholdError.hidden = !msg;
+}
+
+async function loadThreshold() {
+  try {
+    const n = unwrap(await shell.settings.getLowBalanceThreshold());
+    thresholdInput.value = String(n);
+  } catch (err) {
+    toast(`预警阈值加载失败：${err.message}`);
+  }
+}
+
+async function saveThreshold() {
+  const raw = thresholdInput.value.trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < 0) {
+    setThresholdError('请填写不小于 0 的整数');
+    return;
+  }
+  setThresholdError('');
+  const label = btnSaveThreshold.textContent;
+  btnSaveThreshold.disabled = true;
+  btnSaveThreshold.textContent = '保存中…';
+  try {
+    const saved = unwrap(await shell.settings.setLowBalanceThreshold(n));
+    thresholdInput.value = String(saved);
+    toast('预警阈值已保存');
+  } catch (err) {
+    if (err.code === 'VALIDATION_FAILED') setThresholdError(err.message);
+    else toast(`保存失败：${err.message}`);
+  } finally {
+    btnSaveThreshold.disabled = false;
+    btnSaveThreshold.textContent = label;
+  }
+}
+
 /* ───────────────────────── 启动 ───────────────────────── */
 
 if (!shell || !shell.backup) {
@@ -234,4 +279,12 @@ if (!shell || !shell.backup) {
   btnOpenDir.addEventListener('click', () => void openDir());
   btnRestoreFile.addEventListener('click', () => void doRestore(() => shell.backup.restoreFromFile()));
   void loadList();
+}
+
+if (!shell || !shell.settings) {
+  thresholdInput.disabled = true;
+  btnSaveThreshold.disabled = true;
+} else {
+  btnSaveThreshold.addEventListener('click', () => void saveThreshold());
+  void loadThreshold();
 }

@@ -105,6 +105,10 @@ export const CH = {
   reportsExportAttendanceByClass: 'reports:exportAttendanceByClass',
   reportsHomeSummary: 'reports:homeSummary',
 
+  // 应用设置（极少量全局配置项）
+  settingsGetLowBalanceThreshold: 'settings:getLowBalanceThreshold',
+  settingsSetLowBalanceThreshold: 'settings:setLowBalanceThreshold',
+
   // 数据库快照备份
   backupCreate: 'backup:create',
   backupList: 'backup:list',

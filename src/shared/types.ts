@@ -940,8 +940,10 @@ export interface ReportOverview {
   sessionsInRange: number;
   /** 近 30 天新登记学员（enroll_date >= 今天-30，含当天） */
   newStudentsLast30d: number;
-  /** 在读且剩余课时 <= 3 */
+  /** 在读且剩余课时 <= lowBalanceThreshold */
   lowBalanceCount: number;
+  /** 课时余额预警阈值：可在设置页调整（settings.repo），缺省 3 */
+  lowBalanceThreshold: number;
   /** 未软删物件且库存 <= 预警阈值 */
   lowStockCount: number;
   /** 当年（取 to 的年份）session_id 为空的出勤 / 补课条数——进不了「按班级」导出的提示值 */
@@ -954,7 +956,7 @@ export interface ReportOverview {
 export interface ReportAlerts {
   /** 库存 <= 预警阈值的物件，最紧缺在前 */
   lowStock: { id: number; name: string; quantity: number; threshold: number }[];
-  /** 在读且剩余课时 <= 3 的学员 */
+  /** 在读且剩余课时 <= 预警阈值的学员 */
   lowBalance: { id: number; name: string; remainingLessons: number }[];
   /** 在读、未软删，近 60 天无「出勤」记录；lastAttendDate 为历来最近一次出勤日期（可能无） */
   dormant: { id: number; name: string; lastAttendDate: string | null }[];
@@ -1031,8 +1033,10 @@ export interface ReportStudentStats {
   monthlyNew: { month: string; count: number }[];
   /** 按 referrer 分组计数前 10（空值不计） */
   referrerTop: { referrer: string; count: number }[];
-  /** 在读且剩余课时 <= 3（与预警中心同口径） */
+  /** 在读且剩余课时 <= lowBalanceThreshold（与预警中心同口径） */
   lowBalance: { id: number; name: string; remainingLessons: number }[];
+  /** lowBalance 所用的课时余额预警阈值：可在设置页调整，缺省 3 */
+  lowBalanceThreshold: number;
   /** 在读、未软删，近 60 天无「出勤」（与预警中心同口径） */
   dormant: { id: number; name: string; lastAttendDate: string | null }[];
 }

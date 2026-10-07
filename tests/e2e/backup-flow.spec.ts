@@ -122,9 +122,10 @@ test('happy path：启动自动备份 → 设置页列表 → 立即备份 +1 �
   await expect(page.locator('#toast')).toContainText('已备份到');
   expect(snapshotFiles().length).toBe(bootFiles.length + 1);
 
-  // 任取一份快照：独立打开，断言 quick_check 通过、且表清单是完整的 v6 结构
+  // 任取一份快照：独立打开，断言 quick_check 通过、且表清单是完整的 v7 结构
   // （主库正被运行中的应用以 WAL 占用，不宜再开第二个连接去比，这里对齐固定的表清单）
   const EXPECTED_TABLES = [
+    'app_settings',
     'attendance_records',
     'class_schedules',
     'class_sessions',

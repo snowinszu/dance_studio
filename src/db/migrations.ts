@@ -343,8 +343,27 @@ const v6 = (db: Database): void => {
 };
 
 /**
+ * v7：通用「应用设置」键值表——存放跨模块的少量全局配置项（目前只有一项：
+ * 课时余额预警阈值，原先硬编码在 reports.repo.ts 的「<= 3」，现在挪成可调）。
+ *
+ * 整体类比：墙上贴的一张「本店规则」便签，key 是规则名，value 统一存字符串
+ * （数字也转成字符串存，读的时候各自按约定类型解析）。不为这类轻量配置单独
+ * 开表加列、不建索引——预期行数个位数，`src/domain/settings.repo.ts` 按
+ * key 读写，调用方不需要知道底下是 key-value 还是独立列。
+ */
+const v7 = (db: Database): void => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+};
+
+/**
  * 全部迁移，按 version 升序。新增结构变更时往末尾追加。
- * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4 → 5 → 6，见各版注释）。
+ * 版本号必须严格递增且唯一，但允许有空档（如这里 2 → 4 → 5 → 6 → 7，见各版注释）。
  */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, up: v1 },
@@ -352,6 +371,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, up: v4 },
   { version: 5, up: v5 },
   { version: 6, up: v6 },
+  { version: 7, up: v7 },
 ];
 
 /** 当前代码期望的最高版本号。 */

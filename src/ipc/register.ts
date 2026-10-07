@@ -71,6 +71,7 @@ import * as inventoryRepo from '../domain/inventory.repo';
 import * as attendanceRepo from '../domain/attendance.repo';
 import * as courseRepo from '../domain/course.repo';
 import * as reportsRepo from '../domain/reports.repo';
+import * as settingsRepo from '../domain/settings.repo';
 import {
   validateClass,
   validateMonthQuery,
@@ -643,6 +644,13 @@ export function registerIpc(): void {
   );
 
   handle(CH.reportsHomeSummary, () => reportsRepo.getHomeSummary());
+
+  // —— 应用设置 ——
+  handle(CH.settingsGetLowBalanceThreshold, () => settingsRepo.getLowBalanceThreshold());
+
+  handle(CH.settingsSetLowBalanceThreshold, (value?: number) =>
+    settingsRepo.setLowBalanceThreshold(value),
+  );
 
   // —— 数据库快照备份 ——
   // 完整性校验失败（BACKUP_VERIFY_FAILED）原样透出；其余（磁盘满 / 无写权限……）
